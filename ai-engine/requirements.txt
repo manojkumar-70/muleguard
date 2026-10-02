@@ -1,0 +1,9 @@
+pandas
+numpy
+scikit-learn
+networkx
+fastapi
+uvicorn
+httpx
+streamlit
+plotly

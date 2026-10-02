@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+build/
+dist/
+.venv/
+venv/
+env/
+.env
+!.env.example
+
+# Java
+*.class
+target/
+out/
+.gradle/
+
+# IDEs and editors
+.idea/
+.vscode/
+.project
+.classpath
+.settings/
+*.iml
+
+# Operating system
+.DS_Store
+Thumbs.db
