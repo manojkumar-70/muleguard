@@ -19,6 +19,16 @@ The API provides `GET /health`, `GET /summary`, `GET /alerts`,
 `GET /accounts/{account_id}`, and `POST /analyze`. Run its tests from
 `ai-engine` with `python -m unittest -v test_api`.
 
+## Payment integration foundation contracts
+
+Phase 3.2 defines closed Pydantic schemas and payment status transitions in
+`ai-engine/payment_service/`. Payment contracts require synthetic identifiers
+and integer INR paise amounts, keep payment lifecycle status separate from
+MuleGuard risk status, and reject undeclared fields such as scenario labels,
+evaluation roles, account-role metadata, and secrets. The repository module
+defines a typed persistence/idempotency contract only; this phase adds no
+database, provider integration, payment processing, or account actions.
+
 ## Local dashboard
 
 The Streamlit dashboard uses the same local synthetic CSV and analysis modules.
