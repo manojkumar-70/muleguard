@@ -17,17 +17,35 @@ class RiskAggregationConfig:
     ml_weight: float = 0.3
     low_risk_max: float = 29.0
     medium_risk_max: float = 64.0
+    graph_indicator_points: float = 20.0
+    graph_score_cap: float = 60.0
 
     def __post_init__(self):
+        if not all(
+            math.isfinite(weight)
+            for weight in (self.behavioral_weight, self.ml_weight)
+        ):
+            raise ValueError("Risk weights must be finite")
         if self.behavioral_weight < 0 or self.ml_weight < 0:
             raise ValueError("Risk weights must not be negative")
         if self.behavioral_weight + self.ml_weight <= 0:
             raise ValueError("At least one risk weight must be positive")
-        if not 0 <= self.low_risk_max < self.medium_risk_max <= 100:
+        if (
+            not math.isfinite(self.low_risk_max)
+            or not math.isfinite(self.medium_risk_max)
+            or not 0 <= self.low_risk_max < self.medium_risk_max <= 100
+        ):
             raise ValueError(
                 "Risk thresholds must satisfy 0 <= low_risk_max "
                 "< medium_risk_max <= 100"
             )
+        if (
+            not math.isfinite(self.graph_indicator_points)
+            or self.graph_indicator_points < 0
+        ):
+            raise ValueError("graph_indicator_points must be finite and non-negative")
+        if not math.isfinite(self.graph_score_cap) or not 0 <= self.graph_score_cap < 100:
+            raise ValueError("graph_score_cap must be finite and between 0 and 100")
 
 
 def aggregate_risk(rule_results, ml_results, graph_results, config=None):
@@ -41,6 +59,7 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
     config = config or RiskAggregationConfig()
     rules_by_account = _index_results(rule_results, "rule")
     ml_by_account = _index_results(_records(ml_results), "ML")
+    graph_results = graph_results or {}
     graph_accounts = graph_results.get("accounts", [])
     graph_by_account = _index_results(graph_accounts, "graph")
     anomaly_percentiles = _percentile_scores(ml_by_account)
@@ -61,8 +80,12 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
         rule_score = _validate_score(
             rule_result.get("initial_risk_score", 0), account_id, "rule"
         )
-        graph_indicators = graph_result.get("risk_indicators", [])
-        graph_score = 100.0 if graph_indicators else 0.0
+        graph_indicators = graph_result.get("risk_indicators") or []
+        graph_indicator_types = _distinct_graph_indicators(graph_indicators)
+        graph_score = min(
+            config.graph_score_cap,
+            len(graph_indicator_types) * config.graph_indicator_points,
+        )
         anomaly_score = anomaly_percentiles.get(account_id, 0.0)
 
         behavioral_score = max(rule_score, graph_score)
@@ -77,15 +100,21 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
                 "raw_score": rule_score,
                 "contribution": 0.0,
                 "indicators": rule_result.get("risk_indicators", []),
-                "explanation": "Included in the consolidated behavioural signal.",
+                "explanation": (
+                    "No rule-based result available; this signal contributes 0."
+                    if not rule_result
+                    else "Included in the consolidated behavioural signal."
+                ),
             },
             "graph_based": {
                 "raw_score": graph_score,
                 "contribution": 0.0,
                 "indicators": graph_indicators,
-                "explanation": (
-                    "Graph structure indicators are consolidated with rule "
-                    "indicators to reduce double-counting."
+                "distinct_indicator_count": len(graph_indicator_types),
+                "explanation": _graph_explanation(
+                    len(graph_indicator_types),
+                    config.graph_indicator_points,
+                    config.graph_score_cap,
                 ),
             },
             "ml_anomaly": {
@@ -94,8 +123,12 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
                 "contribution": round(ml_contribution, 2),
                 "indicators": [],
                 "explanation": (
-                    "Relative percentile of the IsolationForest anomaly score "
-                    "among scored accounts; it is not a probability."
+                    (
+                        "Relative percentile of the IsolationForest anomaly score "
+                        "among scored accounts; it is not a probability."
+                    )
+                    if account_id in anomaly_percentiles
+                    else "No ML anomaly score available; this signal contributes 0."
                 ),
             },
         }
@@ -112,7 +145,12 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
                 behavioral_contribution, 2
             )
             contributions["graph_based"]["explanation"] = (
-                "Graph indicators supplied the consolidated behavioural signal."
+                "Graph indicators supplied the consolidated behavioural signal. "
+                + _graph_explanation(
+                    len(graph_indicator_types),
+                    config.graph_indicator_points,
+                    config.graph_score_cap,
+                )
             )
         elif behavioral_score > 0:
             contributions["rule_based"]["contribution"] = round(
@@ -128,7 +166,12 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
             )
             contributions["graph_based"]["explanation"] = (
                 "Rule-based and graph signals tied; the consolidated behavioural "
-                "contribution is split between them."
+                "contribution is split between them. "
+                + _graph_explanation(
+                    len(graph_indicator_types),
+                    config.graph_indicator_points,
+                    config.graph_score_cap,
+                )
             )
         else:
             contributions["rule_based"]["explanation"] = (
@@ -172,6 +215,8 @@ def aggregate_risk(rule_results, ml_results, graph_results, config=None):
 
 
 def _records(results):
+    if results is None:
+        return []
     if hasattr(results, "to_dict"):
         return results.to_dict(orient="records")
     return results
@@ -179,6 +224,8 @@ def _records(results):
 
 def _index_results(results, source):
     indexed = {}
+    if results is None:
+        results = []
     for result in results:
         account_id = result.get("account_id")
         if not isinstance(account_id, str) or not account_id:
@@ -187,6 +234,35 @@ def _index_results(results, source):
             raise ValueError(f"Duplicate {source} result for account_id {account_id}")
         indexed[account_id] = result
     return indexed
+
+
+def _distinct_graph_indicators(indicators):
+    """Return indicator type keys once each so duplicates cannot inflate risk."""
+    types = []
+    seen = set()
+    for indicator in indicators:
+        if isinstance(indicator, dict):
+            indicator_type = indicator.get("rule")
+        else:
+            indicator_type = str(indicator)
+        if not isinstance(indicator_type, str) or not indicator_type:
+            indicator_type = repr(indicator)
+        if indicator_type not in seen:
+            seen.add(indicator_type)
+            types.append(indicator_type)
+    return types
+
+
+def _graph_explanation(indicator_count, points_per_indicator, score_cap):
+    if not indicator_count:
+        return "No graph indicators contributed to the behavioural signal."
+    return (
+        f"{indicator_count} distinct graph indicator type(s) contributed "
+        f"{min(score_cap, indicator_count * points_per_indicator):.1f} raw "
+        f"points ({points_per_indicator:.1f} per type, capped at "
+        f"{score_cap:.1f}); graph and rule signals are consolidated using "
+        "the larger raw score to reduce overlap double-counting."
+    )
 
 
 def _percentile_scores(ml_by_account):

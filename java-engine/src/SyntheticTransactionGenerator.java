@@ -13,6 +13,7 @@ import java.util.TreeMap;
 public final class SyntheticTransactionGenerator {
     private static final long SEED = 20261002L;
     private static final int NORMAL_TRANSACTION_COUNT = 1_000;
+    private static final int NORMAL_MERCHANT_TRANSACTION_COUNT = 60;
     private static final int MULE_ACCOUNT_COUNT = 20;
     private static final int INBOUND_PER_MULE = 8;
     private static final int OUTBOUND_PER_MULE = 2;
@@ -30,15 +31,20 @@ public final class SyntheticTransactionGenerator {
     }
 
     public static void main(String[] args) throws IOException {
+        if (args.length > 2) {
+            throw new IllegalArgumentException(
+                    "Usage: SyntheticTransactionGenerator [output.csv] [seed]");
+        }
         Path output = args.length == 0
                 ? Path.of("java-engine", "data", "transactions.csv")
                 : Path.of(args[0]);
+        long seed = args.length < 2 ? SEED : Long.parseLong(args[1]);
         Path parent = output.toAbsolutePath().getParent();
         if (parent != null) {
             Files.createDirectories(parent);
         }
 
-        Random random = new Random(SEED);
+        Random random = new Random(seed);
         Map<String, String> evaluationRoles = new TreeMap<>();
         try (BufferedWriter writer = Files.newBufferedWriter(
                 output, StandardCharsets.UTF_8)) {
@@ -53,11 +59,13 @@ public final class SyntheticTransactionGenerator {
 
         System.out.printf(
                 Locale.ROOT,
-                "Generated %d transactions (%d NORMAL, %d SYNTHETIC_SUSPICIOUS) at %s%n",
+                "Generated %d transactions (%d NORMAL, %d SYNTHETIC_SUSPICIOUS) "
+                        + "with seed %d at %s%n",
                 NORMAL_TRANSACTION_COUNT + MULE_ACCOUNT_COUNT
                         * (INBOUND_PER_MULE + OUTBOUND_PER_MULE),
                 NORMAL_TRANSACTION_COUNT,
                 MULE_ACCOUNT_COUNT * (INBOUND_PER_MULE + OUTBOUND_PER_MULE),
+                seed,
                 output);
     }
 
@@ -67,11 +75,17 @@ public final class SyntheticTransactionGenerator {
             int transactionId,
             Map<String, String> evaluationRoles) throws IOException {
         for (int i = 0; i < NORMAL_TRANSACTION_COUNT; i++) {
-            String sender = accountId("N", random.nextInt(500) + 1);
+            String sender;
             String receiver;
-            do {
-                receiver = accountId("N", random.nextInt(500) + 1);
-            } while (sender.equals(receiver));
+            if (i < NORMAL_MERCHANT_TRANSACTION_COUNT) {
+                sender = accountId("N", 501 + i % 3);
+                receiver = accountId("N", 504);
+            } else {
+                sender = accountId("N", random.nextInt(500) + 1);
+                do {
+                    receiver = accountId("N", random.nextInt(500) + 1);
+                } while (sender.equals(receiver));
+            }
 
             writeTransaction(
                     writer,

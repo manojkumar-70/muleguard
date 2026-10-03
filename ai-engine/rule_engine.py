@@ -32,10 +32,12 @@ class RuleEngineConfig:
     movement_min_incoming_transactions: int = 5
     movement_min_outgoing_transactions: int = 2
     movement_min_incoming_counterparties: int = 3
+    counterparty_breadth_min_incoming_counterparties: int = 6
     incoming_outgoing_ratio_threshold: float = 2.5
     concentration_points: int = 30
     activity_points: int = 20
     movement_points: int = 30
+    counterparty_breadth_points: int = 25
     medium_risk_threshold: int = 30
     high_risk_threshold: int = 65
 
@@ -47,6 +49,7 @@ class RuleEngineConfig:
             "movement_min_incoming_transactions",
             "movement_min_outgoing_transactions",
             "movement_min_incoming_counterparties",
+            "counterparty_breadth_min_incoming_counterparties",
         )
         for field in positive_integer_fields:
             if getattr(self, field) < 1:
@@ -64,7 +67,12 @@ class RuleEngineConfig:
             raise ValueError(
                 "incoming_outgoing_ratio_threshold must be positive and finite"
             )
-        for field in ("concentration_points", "activity_points", "movement_points"):
+        for field in (
+            "concentration_points",
+            "activity_points",
+            "movement_points",
+            "counterparty_breadth_points",
+        ):
             if not 0 <= getattr(self, field) <= 100:
                 raise ValueError(f"{field} must be between 0 and 100")
         if not 1 <= self.medium_risk_threshold < self.high_risk_threshold <= 100:
@@ -77,6 +85,10 @@ class RuleEngineConfig:
 def detect_accounts(transactions, config=None):
     """Calculate account features and rule indicators without reading labels."""
     config = config or RuleEngineConfig()
+    # Evaluation labels are never part of the detector input contract.
+    transactions = transactions.drop(
+        columns=["scenario_label", "evaluation_role"], errors="ignore"
+    )
     _validate_transactions(transactions)
     if transactions.empty:
         raise ValueError("Cannot analyze accounts: transaction dataset is empty")
@@ -290,6 +302,7 @@ def evaluate_results(detections, role_manifest=None, config=None):
         predicted_positive_accounts,
         evaluated_accounts,
         "FOCAL_SUSPICIOUS",
+        "NON_FOCAL",
     )
     participant_metrics = _evaluate_positive_set(
         participant_positive_accounts,
@@ -326,7 +339,10 @@ def run_rule_engine(transactions=None, config=None, role_manifest=None):
     uses_default_dataset = transactions is None
     source = load_transactions() if uses_default_dataset else transactions
     detections = detect_accounts(
-        source.drop(columns=["scenario_label"], errors="ignore"), config
+        source.drop(
+            columns=["scenario_label", "evaluation_role"], errors="ignore"
+        ),
+        config,
     )
     if role_manifest is None and uses_default_dataset:
         if DEFAULT_ROLE_MANIFEST_PATH.is_file():
@@ -365,7 +381,7 @@ def print_report(report):
     print(f"Precision: {evaluation['focal_account_evaluation']['precision']:.3f}")
     print(f"Recall:    {evaluation['focal_account_evaluation']['recall']:.3f}")
     print(f"F1 score:  {evaluation['focal_account_evaluation']['f1_score']:.3f}")
-    print("Confusion matrix (actual rows; predicted columns; NORMAL, focal):")
+    print("Confusion matrix (actual rows; predicted columns; NON_FOCAL, focal):")
     for row in evaluation["focal_account_evaluation"]["confusion_matrix"][
         "rows_actual_columns_predicted"
     ]:
@@ -442,6 +458,7 @@ def _evaluate_rules(features, config):
     count = features["successful_transaction_count"]
     concentration_count = features["short_window_transaction_count"]
     concentration_share = features["short_window_transaction_share"]
+    unique_incoming = features["unique_incoming_counterparties"]
     if (
         count >= config.concentration_min_transactions
         and concentration_share >= config.concentration_min_share
@@ -461,6 +478,24 @@ def _evaluate_rules(features, config):
         )
 
     frequency = features["transaction_activity_frequency_per_day"]
+    if (
+        count >= config.min_transactions_for_rules
+        and unique_incoming
+        >= config.counterparty_breadth_min_incoming_counterparties
+    ):
+        reasons.append(
+            {
+                "rule": "diverse_incoming_counterparties",
+                "points": config.counterparty_breadth_points,
+                "explanation": (
+                    f"Received successful transactions from {unique_incoming} "
+                    "unique accounts, meeting the configured counterparty "
+                    f"breadth threshold of "
+                    f"{config.counterparty_breadth_min_incoming_counterparties}."
+                ),
+            }
+        )
+
     if (
         count >= config.min_transactions_for_rules
         and frequency >= config.activity_threshold_per_day
@@ -517,7 +552,11 @@ def _safe_divide(numerator, denominator):
 
 
 def _evaluate_positive_set(
-    actual_positive, predicted_positive, evaluated_accounts, positive_label
+    actual_positive,
+    predicted_positive,
+    evaluated_accounts,
+    positive_label,
+    negative_label="NORMAL",
 ):
     true_positive = len(predicted_positive & actual_positive)
     false_positive = len(predicted_positive - actual_positive)
@@ -528,13 +567,24 @@ def _evaluate_positive_set(
     precision = _safe_divide(true_positive, true_positive + false_positive)
     recall = _safe_divide(true_positive, true_positive + false_negative)
     f1 = _safe_divide(2 * precision * recall, precision + recall)
+    false_positive_rate = _safe_divide(
+        false_positive, false_positive + true_negative
+    )
     return {
+        "positive_class": positive_label,
+        "negative_class": negative_label,
         "positive_account_count": len(actual_positive),
+        "detection_count": len(predicted_positive),
         "precision": precision,
         "recall": recall,
         "f1_score": f1,
+        "false_positive_rate": false_positive_rate,
         "confusion_matrix": {
-            "labels": ["NORMAL", positive_label],
+            "labels": [negative_label, positive_label],
+            "ordering": (
+                "labels are ordered [negative, positive]; matrix rows are actual "
+                "classes and columns are predicted classes"
+            ),
             "rows_actual_columns_predicted": [
                 [true_negative, false_positive],
                 [false_negative, true_positive],

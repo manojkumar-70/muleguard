@@ -71,7 +71,7 @@ class RuleEngineTests(unittest.TestCase):
         self.assertEqual(mule["features"]["unique_incoming_counterparties"], 8)
         self.assertEqual(mule["features"]["unique_outgoing_counterparties"], 2)
         self.assertEqual(mule["features"]["incoming_outgoing_amount_ratio"], 10.0)
-        self.assertEqual(mule["risk_score"], 80)
+        self.assertEqual(mule["risk_score"], 100)
         self.assertEqual(mule["risk_category"], "HIGH")
         self.assertEqual(
             {reason["rule"] for reason in mule["reasons"]},
@@ -79,6 +79,7 @@ class RuleEngineTests(unittest.TestCase):
                 "short_window_concentration",
                 "elevated_activity",
                 "incoming_to_outgoing_movement_imbalance",
+                "diverse_incoming_counterparties",
             },
         )
         self.assertTrue(all(reason["explanation"] for reason in mule["reasons"]))
@@ -135,7 +136,7 @@ class RuleEngineTests(unittest.TestCase):
         )
         self.assertEqual(
             evaluation["focal_account_evaluation"]["confusion_matrix"]["labels"],
-            ["NORMAL", "FOCAL_SUSPICIOUS"],
+            ["NON_FOCAL", "FOCAL_SUSPICIOUS"],
         )
 
     def test_missing_role_manifest_makes_evaluation_unavailable(self):
