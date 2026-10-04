@@ -1,5 +1,6 @@
 """Application service for synthetic payment creation and retrieval."""
 
+from dataclasses import dataclass
 from collections.abc import Callable
 from datetime import datetime, timezone
 import hashlib
@@ -56,6 +57,14 @@ class InvalidProviderOutcomeError(PaymentServiceError):
     """Provider result is invalid for the current payment state."""
 
 
+@dataclass(frozen=True)
+class PaymentCreationResult:
+    """Payment and whether this call inserted its idempotency record."""
+
+    payment: Payment
+    was_created: bool
+
+
 class SyntheticPaymentService:
     """Create and retrieve synthetic payments without detector integration."""
 
@@ -77,6 +86,14 @@ class SyntheticPaymentService:
         idempotency_key: str,
     ) -> Payment:
         """Create, persist, and resolve a synthetic payment idempotently."""
+        return self.create_payment_with_result(command, idempotency_key).payment
+
+    def create_payment_with_result(
+        self,
+        command: CreatePaymentCommand,
+        idempotency_key: str,
+    ) -> PaymentCreationResult:
+        """Create a payment and report whether this call created its record."""
         command = CreatePaymentCommand.model_validate(command)
         key_digest = _digest_idempotency_key(idempotency_key)
         customer = self._repository.get_customer(command.customer_id)
@@ -119,14 +136,14 @@ class SyntheticPaymentService:
             updated_at=now,
         )
 
-        payment, _was_created = self._repository.get_or_create_payment(
+        payment, was_created = self._repository.get_or_create_payment(
             idempotency_scope=idempotency_scope,
             idempotency_key_digest=key_digest,
             request_digest=request_digest,
             payment=initial_payment,
         )
         if payment.payment_status != PaymentStatus.CREATED:
-            return payment
+            return PaymentCreationResult(payment, was_created)
 
         try:
             provider_result = ProviderResult.model_validate(
@@ -176,7 +193,7 @@ class SyntheticPaymentService:
             raise PaymentNotFoundError(
                 "Payment disappeared after a successful persistence update."
             )
-        return stored_payment
+        return PaymentCreationResult(stored_payment, was_created)
 
     def get_payment(self, payment_id: str) -> Payment:
         """Retrieve a payment or raise the repository's typed not-found error."""

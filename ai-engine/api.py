@@ -6,7 +6,9 @@ import re
 from datetime import datetime
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from anomaly_detection import detect_account_anomalies
@@ -14,6 +16,22 @@ from data_loader import load_transactions
 from risk_aggregation import aggregate_risk
 from rule_based_analysis import analyze_accounts
 from transaction_graph_analysis import analyze_transaction_graph
+from payment_service.config import PaymentAPISettings
+from payment_service.errors import (
+    IdempotencyConflictError,
+    InvalidPaymentTransitionError,
+    PaymentNotFoundError,
+    RepositoryConstraintError,
+    RepositoryDatabaseError,
+)
+from payment_service.routes import (
+    PaymentAPIError,
+    InactiveSyntheticEntityError,
+    InvalidProviderOutcomeError,
+    SyntheticEntityNotFoundError,
+    payment_error_handler,
+    payment_router,
+)
 
 
 DOCUMENTATION_NETWORKS = tuple(
@@ -22,14 +40,7 @@ DOCUMENTATION_NETWORKS = tuple(
 )
 SYNTHETIC_LABELS = {"NORMAL", "SYNTHETIC_SUSPICIOUS"}
 
-app = FastAPI(
-    title="MuleGuard AI API",
-    description=(
-        "Defensive analysis of synthetic transactions only. Risk indicators "
-        "are not proof of criminal activity and trigger no real account actions."
-    ),
-    version="0.1.0",
-)
+_existing_api_router = APIRouter()
 
 
 class SyntheticTransaction(BaseModel):
@@ -196,12 +207,12 @@ def _account_details(analysis, account_id):
     }
 
 
-@app.get("/health")
+@_existing_api_router.get("/health")
 def health():
     return {"status": "ok", "mode": "synthetic-only"}
 
 
-@app.get("/summary")
+@_existing_api_router.get("/summary")
 def summary():
     analysis = _default_analysis()
     return {
@@ -211,7 +222,7 @@ def summary():
     }
 
 
-@app.get("/alerts")
+@_existing_api_router.get("/alerts")
 def alerts():
     analysis = _default_analysis()
     flagged = [
@@ -223,12 +234,12 @@ def alerts():
     return {"count": len(flagged), "alerts": flagged}
 
 
-@app.get("/accounts/{account_id}")
+@_existing_api_router.get("/accounts/{account_id}")
 def account(account_id: str):
     return _account_details(_default_analysis(), account_id)
 
 
-@app.post("/analyze")
+@_existing_api_router.post("/analyze")
 def analyze(request: AnalyzeRequest):
     transactions = pd.DataFrame(
         [transaction.model_dump() for transaction in request.transactions]
@@ -243,3 +254,107 @@ def analyze(request: AnalyzeRequest):
         "graph_summary": analysis["graph_results"]["summary"],
         "accounts": analysis["risk_results"]["accounts"],
     }
+
+
+def create_app(settings: PaymentAPISettings | None = None) -> FastAPI:
+    """Create the existing API, adding payment routes only when enabled."""
+    settings = settings or PaymentAPISettings.from_environment()
+    application = FastAPI(
+        title="MuleGuard AI API",
+        description=(
+            "Defensive analysis of synthetic transactions only. Risk indicators "
+            "are not proof of criminal activity and trigger no real account actions."
+        ),
+        version="0.1.0",
+    )
+    application.state.payment_api_settings = settings
+    application.include_router(_existing_api_router)
+
+    if settings.enabled:
+        application.include_router(payment_router, prefix="/v1")
+        _register_payment_error_handlers(application)
+    return application
+
+
+def _register_payment_error_handlers(application: FastAPI) -> None:
+    async def handle_payment_api_error(
+        _request: Request, error: PaymentAPIError
+    ):
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(
+            status_code=error.status_code,
+            content={
+                "error": {
+                    "code": error.code,
+                    "message": error.message,
+                }
+            },
+        )
+
+    error_handlers = {
+        SyntheticEntityNotFoundError: (
+            404,
+            "synthetic_entity_not_found",
+            "Synthetic customer or merchant was not found.",
+        ),
+        PaymentNotFoundError: (
+            404,
+            "payment_not_found",
+            "Payment was not found.",
+        ),
+        InactiveSyntheticEntityError: (
+            409,
+            "synthetic_entity_inactive",
+            "Inactive synthetic customers or merchants cannot create payments.",
+        ),
+        IdempotencyConflictError: (
+            409,
+            "idempotency_conflict",
+            "Idempotency key conflicts with an earlier request.",
+        ),
+        RepositoryConstraintError: (
+            409,
+            "payment_persistence_conflict",
+            "Payment conflicts with existing synthetic records.",
+        ),
+        RepositoryDatabaseError: (
+            503,
+            "payment_storage_unavailable",
+            "Payment storage is unavailable.",
+        ),
+        InvalidPaymentTransitionError: (
+            502,
+            "invalid_provider_outcome",
+            "The synthetic provider returned an invalid outcome.",
+        ),
+        InvalidProviderOutcomeError: (
+            502,
+            "invalid_provider_outcome",
+            "The synthetic provider returned an invalid outcome.",
+        ),
+    }
+    for error_type, (status_code, code, message) in error_handlers.items():
+        application.add_exception_handler(
+            error_type,
+            payment_error_handler(status_code, code, message),
+        )
+    application.add_exception_handler(
+        PaymentAPIError, handle_payment_api_error
+    )
+
+    async def sanitize_payment_validation(
+        request: Request, error: RequestValidationError
+    ):
+        if request.url.path.startswith("/v1/payments"):
+            return await payment_error_handler(
+                422, "invalid_request", "Payment request validation failed."
+            )(request, error)
+        return await request_validation_exception_handler(request, error)
+
+    application.add_exception_handler(
+        RequestValidationError, sanitize_payment_validation
+    )
+
+
+app = create_app()

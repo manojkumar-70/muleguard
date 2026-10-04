@@ -38,9 +38,38 @@ persists synthetic customers, merchants, payments, provider-event digests,
 streaming detection results, append-only reviews, and simulated interventions.
 Amounts remain integer paise, timestamps retain timezone offsets, and payment
 status remains independent from MuleGuard risk status. The database is not
-connected to existing API routes or the dashboard. No credentials, card data,
+connected to the existing analysis routes or the dashboard. No credentials, card data,
 raw webhook bodies, evaluation labels, or role manifests are stored. All
 intervention records remain simulated.
+
+## Controlled synthetic payment API
+
+The opt-in payment API exposes only `POST /v1/payments` and
+`GET /v1/payments/{payment_id}`. It is disabled by default and is registered
+only when `MULEGUARD_PAYMENT_API_ENABLED=true`. Payment creation requires an
+`Idempotency-Key` header and accepts synthetic customer/merchant IDs, integer
+INR paise, and no additional fields. Responses do not expose idempotency
+digests, provider references, credentials, evaluation labels, or database
+internals. Payment status and MuleGuard risk status remain separate; risk
+remains `NOT_EVALUATED` in this phase.
+
+The API always uses the deterministic offline `FakePaymentProvider`. It does
+not connect to payment rails, detectors, replay, streaming, or the dashboard,
+and cannot execute account actions. Its SQLite file is initialized lazily on
+the first payment request; `MULEGUARD_PAYMENT_API_DATABASE_PATH` can select a
+local file path. This unauthenticated demo API must be used only on a local
+machine and bound to loopback, for example `--host 127.0.0.1`. Never expose it
+to a shared network or use it for production payments.
+
+From `ai-engine`, explicitly enable and run the local demo with:
+
+```powershell
+$env:MULEGUARD_PAYMENT_API_ENABLED = "true"
+python -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+Unset the variable or set it to `false` to keep the payment routes disabled.
+Run the focused API tests with `python -m unittest -v test_payment_api`.
 
 ## Local dashboard
 
