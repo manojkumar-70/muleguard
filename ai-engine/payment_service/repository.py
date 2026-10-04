@@ -8,6 +8,8 @@ from payment_service.schemas import (
     Payment,
     ProviderEvent,
     SimulatedIntervention,
+    SyntheticCustomer,
+    SyntheticMerchant,
 )
 
 
@@ -19,6 +21,22 @@ class PaymentRepository(Protocol):
     ``(provider_name, provider_event_id)``. Repeating a key with a different
     request digest must fail rather than overwrite the original payment.
     """
+
+    def save_customer(self, customer: SyntheticCustomer) -> None:
+        """Persist a validated synthetic customer."""
+        ...
+
+    def get_customer(self, customer_id: str) -> SyntheticCustomer | None:
+        """Fetch a customer by internal ID."""
+        ...
+
+    def save_merchant(self, merchant: SyntheticMerchant) -> None:
+        """Persist a validated synthetic merchant."""
+        ...
+
+    def get_merchant(self, merchant_id: str) -> SyntheticMerchant | None:
+        """Fetch a merchant by internal ID."""
+        ...
 
     def get_or_create_payment(
         self,
@@ -40,6 +58,14 @@ class PaymentRepository(Protocol):
 
     def record_provider_event_once(self, event: ProviderEvent) -> bool:
         """Atomically store an event; return false for an exact duplicate."""
+        ...
+
+    def record_provider_event_and_update_payment(
+        self,
+        event: ProviderEvent,
+        payment: Payment,
+    ) -> bool:
+        """Atomically persist a verified event and its validated payment update."""
         ...
 
     def save_detection_result(self, result: DetectionResult) -> None:

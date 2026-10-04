@@ -29,6 +29,19 @@ evaluation roles, account-role metadata, and secrets. The repository module
 defines a typed persistence/idempotency contract only; this phase adds no
 database, provider integration, payment processing, or account actions.
 
+### Local SQLite payment persistence
+
+Phase 3.3 adds an explicitly constructed SQLite repository for the payment
+foundation. Its default file is `ai-engine/data/payment_service.sqlite3`;
+schema initialization is versioned with SQLite `user_version`. The repository
+persists synthetic customers, merchants, payments, provider-event digests,
+streaming detection results, append-only reviews, and simulated interventions.
+Amounts remain integer paise, timestamps retain timezone offsets, and payment
+status remains independent from MuleGuard risk status. The database is not
+connected to existing API routes or the dashboard. No credentials, card data,
+raw webhook bodies, evaluation labels, or role manifests are stored. All
+intervention records remain simulated.
+
 ## Local dashboard
 
 The Streamlit dashboard uses the same local synthetic CSV and analysis modules.
