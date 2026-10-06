@@ -216,7 +216,7 @@ class NormalizedTransactionEvent(ContractModel):
 class DetectionResult(ContractModel):
     detection_result_id: str = Field(pattern=r"^DET-[A-Za-z0-9-]{1,72}$")
     payment_id: str = Field(pattern=r"^PAY-[A-Za-z0-9-]{1,72}$")
-    transaction_id: str = Field(pattern=r"^TXN-[A-Za-z0-9-]{1,74}$")
+    transaction_id: str = Field(pattern=r"^(?:TXN|PAY)-[A-Za-z0-9-]{1,74}$")
     protocol: Literal["stream_frozen_model"]
     risk_score: FiniteFloat = Field(ge=0, le=100)
     risk_status: Literal["LOW", "MEDIUM", "HIGH"]
