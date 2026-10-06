@@ -20,6 +20,15 @@ from data_loader import load_transactions
 from risk_aggregation import DISCLAIMER, aggregate_risk
 from rule_based_analysis import analyze_accounts
 from transaction_graph_analysis import analyze_transaction_graph
+from investigation_client import (
+    InvestigationAPIClient,
+    InvestigationAPIError,
+)
+
+
+OFFLINE_DATASET_MODE = "Offline Dataset"
+INVESTIGATION_MODE = "Payment Service / Investigation"
+DATA_SOURCE_MODES = (OFFLINE_DATASET_MODE, INVESTIGATION_MODE)
 
 
 @st.cache_data(show_spinner=False)
@@ -183,6 +192,138 @@ def make_network_figure(transactions, risk_results, focus_account, node_limit=35
     return figure
 
 
+def render_account_activity(ui, activity):
+    ui.subheader("Account activity timeline")
+    if not activity:
+        ui.info("No payment activity was found for this account.")
+        return
+    ui.dataframe(
+        [
+            {
+                "Direction": item.direction.value,
+                "Payment ID": item.payment_id,
+                "Counterparty": item.counterparty_account_id,
+                "Amount (paise)": item.amount_paise,
+                "Currency": item.currency,
+                "Payment status": item.payment_status.value,
+                "Created at": item.created_at,
+                "Risk status": item.risk_status.value,
+                "Data source": item.data_source.value,
+            }
+            for item in activity
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def render_payment_details(ui, payment):
+    ui.subheader(f"Payment details — {payment.payment_id}")
+    ui.caption(f"Data source: {payment.data_source.value}")
+    ui.json(payment.model_dump(mode="json"))
+
+
+def render_detection_result(ui, result):
+    ui.subheader(f"Detection result — {result.detection_result_id}")
+    ui.caption(f"Data source: {result.data_source.value}")
+    ui.json(result.model_dump(mode="json"))
+
+
+def render_investigation_mode(ui=st, client=None):
+    """Render the explicitly selected, read-only payment investigation view."""
+    ui.header("Payment Service / Investigation")
+    ui.info(
+        "Source: STREAMING_PAYMENT_SERVICE. This view is read-only and does not "
+        "run detection or change payment state."
+    )
+    account_id = ui.text_input(
+        "Account ID",
+        placeholder="ACC-...",
+        key="investigation_account_id",
+    ).strip()
+    if not account_id:
+        ui.caption("Enter an account ID to load payment history and activity.")
+        return
+
+    owns_client = client is None
+    try:
+        client = client or InvestigationAPIClient()
+        with ui.spinner("Loading account payments and activity..."):
+            payments = client.list_account_payments(account_id)
+            activity = client.list_account_activity(account_id)
+        ui.subheader("Account payment history")
+        if payments:
+            ui.dataframe(
+                [
+                    {
+                        "Payment ID": item.payment_id,
+                        "Customer ID": item.customer_id,
+                        "Merchant ID": item.merchant_id,
+                        "Sender": item.sender_account_id,
+                        "Receiver": item.receiver_account_id,
+                        "Amount (paise)": item.amount_paise,
+                        "Currency": item.currency,
+                        "Status": item.status.value,
+                        "Created at": item.created_at,
+                        "Risk status": item.risk_status.value,
+                        "Data source": item.data_source.value,
+                    }
+                    for item in payments
+                ],
+                use_container_width=True,
+                hide_index=True,
+            )
+            payment_ids = [item.payment_id for item in payments]
+            payment_id = ui.selectbox(
+                "Select a payment",
+                payment_ids,
+                key="investigation_payment_id",
+            )
+            with ui.spinner("Loading payment investigation details..."):
+                payment = client.get_payment(payment_id)
+                detection_results = client.list_payment_detection_results(payment_id)
+            render_payment_details(ui, payment)
+            ui.subheader("Associated detection results")
+            if detection_results:
+                result_ids = [item.detection_result_id for item in detection_results]
+                ui.dataframe(
+                    [
+                        {
+                            "Detection result ID": item.detection_result_id,
+                            "Protocol": item.protocol,
+                            "Transaction ID": item.transaction_id,
+                            "Risk level": item.risk_level,
+                            "Risk score": item.risk_score,
+                            "Created at": item.created_at,
+                            "Data source": item.data_source.value,
+                        }
+                        for item in detection_results
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                result_id = ui.selectbox(
+                    "Select a detection result",
+                    result_ids,
+                    key="investigation_detection_result_id",
+                )
+                with ui.spinner("Loading detection result..."):
+                    result = client.get_detection_result(result_id)
+                render_detection_result(ui, result)
+            else:
+                ui.info("No detection results are associated with this payment.")
+        else:
+            ui.info("No payments were found for this account.")
+        render_account_activity(ui, activity)
+    except ValueError as error:
+        ui.error(str(error))
+    except InvestigationAPIError as error:
+        ui.error(str(error))
+    finally:
+        if owns_client and client is not None:
+            client.close()
+
+
 def main():
     st.set_page_config(
         page_title="MuleGuard AI",
@@ -197,6 +338,18 @@ def main():
         "criminal activity. No account actions are performed."
     )
 
+    mode = st.radio(
+        "Data/source mode",
+        DATA_SOURCE_MODES,
+        index=0,
+        key="dashboard_data_source_mode",
+    )
+    if mode == INVESTIGATION_MODE:
+        render_investigation_mode()
+        st.caption(DISCLAIMER)
+        return
+
+    st.caption("Data source: OFFLINE_DATASET")
     try:
         transactions = load_synthetic_transactions()
     except (FileNotFoundError, ValueError) as error:
