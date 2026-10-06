@@ -101,6 +101,109 @@ class SyntheticPaymentAPITests(unittest.TestCase):
         )
         self.assertIsNotNone(stored)
 
+    def test_repository_selection_defaults_to_sqlite_and_reads_environment(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = PaymentAPISettings.from_environment()
+        self.assertEqual(settings.repository_backend, "sqlite")
+
+        with patch.dict(
+            os.environ,
+            {
+                "MULEGUARD_PAYMENT_REPOSITORY": "mongodb",
+                "MONGODB_URI": "mongodb://test.invalid",
+                "MONGODB_DATABASE": "payments_test",
+            },
+            clear=True,
+        ):
+            settings = PaymentAPISettings.from_environment()
+        self.assertEqual(settings.repository_backend, "mongodb")
+
+    def test_missing_mongodb_configuration_fails_without_exposing_values(self):
+        with patch.dict(
+            os.environ,
+            {"MULEGUARD_PAYMENT_REPOSITORY": "mongodb"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                ValueError, "MONGODB_URI.*MONGODB_DATABASE"
+            ) as raised:
+                PaymentAPISettings.from_environment()
+        self.assertNotIn("mongodb://", str(raised.exception))
+
+        settings = PaymentAPISettings(
+            enabled=True,
+            repository_backend="mongodb",
+        )
+        app = api.create_app(settings)
+        response = TestClient(app).post(
+            "/v1/payments",
+            headers={"Idempotency-Key": "missing-mongo-config"},
+            json=_request(),
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json()["error"]["code"],
+            "payment_storage_unavailable",
+        )
+        self.assertNotIn("mongodb://", response.text)
+
+    def test_sqlite_repository_selection_uses_configured_sqlite_repository(self):
+        app = api.create_app(
+            PaymentAPISettings(
+                enabled=True,
+                database_path=self.database_path,
+                repository_backend="sqlite",
+            )
+        )
+        client = TestClient(app)
+        with (
+            patch(
+                "payment_service.routes.SQLitePaymentRepository",
+                return_value=self.repository,
+            ) as sqlite_repository,
+            patch("payment_service.routes.MongoPaymentRepository") as mongo_repository,
+        ):
+            response = client.post(
+                "/v1/payments",
+                headers={"Idempotency-Key": "selected-sqlite"},
+                json=_request(),
+            )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        sqlite_repository.assert_called_once_with(path=self.database_path)
+        mongo_repository.assert_not_called()
+        self.assertIsNotNone(
+            self.repository.get_payment(response.json()["payment_id"])
+        )
+
+    def test_mongodb_repository_selection_serves_api_and_preserves_idempotency(self):
+        app = api.create_app(
+            PaymentAPISettings(
+                enabled=True,
+                repository_backend="mongodb",
+            )
+        )
+        client = TestClient(app)
+        headers = {"Idempotency-Key": "selected-mongodb"}
+        with (
+            patch("payment_service.routes.MongoPaymentRepository") as mongo_repository,
+            patch("payment_service.routes.SQLitePaymentRepository") as sqlite_repository,
+        ):
+            mongo_repository.return_value = self.repository
+            first = client.post("/v1/payments", headers=headers, json=_request())
+            repeated = client.post("/v1/payments", headers=headers, json=_request())
+            retrieved = client.get(
+                f"/v1/payments/{first.json()['payment_id']}"
+            )
+
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertEqual(repeated.json(), first.json())
+        self.assertEqual(retrieved.status_code, 200, retrieved.text)
+        self.assertEqual(retrieved.json(), first.json())
+        self.assertEqual(mongo_repository.call_count, 3)
+        sqlite_repository.assert_not_called()
+
     def test_default_database_is_not_constructed_when_disabled_or_overridden(self):
         existed_before = DEFAULT_DATABASE_PATH.exists()
         modified_before = (

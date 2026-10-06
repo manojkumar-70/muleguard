@@ -17,6 +17,7 @@ from payment_service.errors import (
     RepositoryDatabaseError,
 )
 from payment_service.http_schemas import CreatePaymentRequest, PublicPayment
+from payment_service.mongo_repository import MongoPaymentRepository
 from payment_service.provider import FakePaymentProvider
 from payment_service.service import (
     CreatePaymentCommand,
@@ -48,7 +49,16 @@ def get_payment_service(request: Request) -> SyntheticPaymentService:
         raise PaymentAPIError(
             404, "payment_api_disabled", "Synthetic payment API is disabled."
         )
-    repository = SQLitePaymentRepository(path=settings.database_path)
+    if settings.repository_backend == "mongodb":
+        try:
+            repository = MongoPaymentRepository()
+        except ValueError as error:
+            raise RepositoryDatabaseError(
+                "MongoDB payment repository configuration is unavailable. "
+                "Set MONGODB_URI and MONGODB_DATABASE."
+            ) from error
+    else:
+        repository = SQLitePaymentRepository(path=settings.database_path)
     return SyntheticPaymentService(repository, FakePaymentProvider())
 
 

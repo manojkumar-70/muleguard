@@ -26,8 +26,10 @@ Phase 3.2 defines closed Pydantic schemas and payment status transitions in
 and integer INR paise amounts, keep payment lifecycle status separate from
 MuleGuard risk status, and reject undeclared fields such as scenario labels,
 evaluation roles, account-role metadata, and secrets. The repository module
-defines a typed persistence/idempotency contract only; this phase adds no
-database, provider integration, payment processing, or account actions.
+defines a typed persistence/idempotency contract. Local SQLite persistence
+remains the default and is not connected to the existing analysis routes or
+dashboard. No provider integration, payment processing, or account actions
+are added.
 
 ### Local SQLite payment persistence
 
@@ -41,6 +43,18 @@ status remains independent from MuleGuard risk status. The database is not
 connected to the existing analysis routes or the dashboard. No credentials, card data,
 raw webhook bodies, evaluation labels, or role manifests are stored. All
 intervention records remain simulated.
+
+### Optional MongoDB payment persistence
+
+`ai-engine/payment_service/mongo_repository.py` provides an explicitly
+constructed synchronous PyMongo implementation of the same repository
+contract. It reads `MONGODB_URI` and `MONGODB_DATABASE` from the environment,
+creates its seven collections and uniqueness indexes, and never requires
+credentials in source code. It is not wired into the payment API or selected
+automatically; the application continues to use its current SQLite repository.
+Atomic provider-event processing requires a MongoDB replica set or sharded
+cluster with transaction support; a standalone MongoDB server cannot provide
+that operation.
 
 ## Controlled synthetic payment API
 
