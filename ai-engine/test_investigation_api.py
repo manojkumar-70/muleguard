@@ -161,6 +161,81 @@ class InvestigationAPITests(unittest.TestCase):
         self.assertEqual(empty.status_code, 200, empty.text)
         self.assertEqual(empty.json(), [])
 
+    def test_review_post_and_get_are_append_only_and_read_only(self):
+        before = self.sqlite.get_payment("PAY-0002").model_dump()
+        body = {
+            "detection_result_id": "DET-0001",
+            "reviewer_id": "USER-0001",
+            "decision": "NEEDS_MORE_INFORMATION",
+            "note": "Synthetic review note.",
+        }
+        first = self.client.post(
+            "/v1/investigation/payments/PAY-0002/reviews",
+            json=body,
+        )
+        second = self.client.post(
+            "/v1/investigation/payments/PAY-0002/reviews",
+            json={
+                **body,
+                "reviewer_id": "USER-0002",
+                "decision": "UNRESOLVED",
+            },
+        )
+        retrieved = self.client.get(
+            "/v1/investigation/payments/PAY-0002/reviews"
+        )
+
+        self.assertEqual(first.status_code, 201, first.text)
+        self.assertEqual(second.status_code, 201, second.text)
+        self.assertEqual(retrieved.status_code, 200, retrieved.text)
+        self.assertEqual(len(retrieved.json()), 2)
+        self.assertEqual(
+            {item["reviewer_id"] for item in retrieved.json()},
+            {"USER-0001", "USER-0002"},
+        )
+        self.assertNotEqual(
+            retrieved.json()[0]["review_id"],
+            retrieved.json()[1]["review_id"],
+        )
+        self.assertEqual(self.sqlite.get_payment("PAY-0002").model_dump(), before)
+
+    def test_review_for_missing_payment_returns_404(self):
+        response = self.client.post(
+            "/v1/investigation/payments/PAY-MISSING/reviews",
+            json={
+                "detection_result_id": "DET-0001",
+                "reviewer_id": "USER-0001",
+                "decision": "UNRESOLVED",
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"]["code"], "payment_not_found")
+
+        get_response = self.client.get(
+            "/v1/investigation/payments/PAY-MISSING/reviews"
+        )
+        self.assertEqual(get_response.status_code, 404)
+        empty = self.client.get(
+            "/v1/investigation/payments/PAY-0001/reviews"
+        )
+        self.assertEqual(empty.status_code, 200, empty.text)
+        self.assertEqual(empty.json(), [])
+
+    def test_invalid_review_is_rejected_without_echoing_input(self):
+        response = self.client.post(
+            "/v1/investigation/payments/PAY-0002/reviews",
+            json={
+                "detection_result_id": "not-a-detection",
+                "reviewer_id": "private-reviewer-id",
+                "decision": "FREEZE_ACCOUNT",
+                "note": "private note",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "invalid_request")
+        self.assertNotIn("private-reviewer-id", response.text)
+        self.assertNotIn("private note", response.text)
+
     def test_reads_do_not_mutate_payment_or_risk_state(self):
         before = {
             payment_id: self.sqlite.get_payment(payment_id).model_dump()
@@ -238,6 +313,25 @@ class InvestigationAPITests(unittest.TestCase):
             )
             self.assertEqual(response.status_code, 200, response.text)
             self.assertEqual(response.json(), sqlite_response.json())
+            created_review = TestClient(mongo_app).post(
+                "/v1/investigation/payments/PAY-0002/reviews",
+                json={
+                    "detection_result_id": "DET-0001",
+                    "reviewer_id": "USER-0009",
+                    "decision": "UNRESOLVED",
+                    "note": "Fake Mongo review.",
+                },
+            )
+            self.assertEqual(
+                created_review.status_code,
+                201,
+                created_review.text,
+            )
+            listed_reviews = TestClient(mongo_app).get(
+                "/v1/investigation/payments/PAY-0002/reviews"
+            )
+            self.assertEqual(listed_reviews.status_code, 200)
+            self.assertEqual(len(listed_reviews.json()), 1)
             mongo_app.dependency_overrides.clear()
         finally:
             patcher.stop()
@@ -264,16 +358,27 @@ class _FakeCursor:
 
 
 def _fake_find(collection, query):
-    alternatives = query.get("$or", [])
     matches = [
         document
         for document in collection.documents
-        if any(
-            all(document.get(key) == value for key, value in clause.items())
-            for clause in alternatives
-        )
+        if _matches_document(document, query)
     ]
     return _FakeCursor(matches)
+
+
+def _matches_document(document, query):
+    if "$or" in query:
+        return any(
+            _matches_document(document, condition)
+            for condition in query["$or"]
+        )
+    for key, value in query.items():
+        if isinstance(value, dict) and "$in" in value:
+            if document.get(key) not in value["$in"]:
+                return False
+        elif document.get(key) != value:
+            return False
+    return True
 
 
 def _timestamp(minute):

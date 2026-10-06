@@ -14,6 +14,7 @@ from payment_service.investigation_schemas import (
     InvestigationDataSource,
     PaymentInvestigationSummary,
 )
+from payment_service.schemas import HumanReview, HumanReviewDecision
 
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
@@ -21,6 +22,7 @@ API_BASE_URL_ENV = "MULEGUARD_INVESTIGATION_API_BASE_URL"
 _ACCOUNT_ID_PATTERN = re.compile(r"^ACC-[A-Za-z0-9-]{1,74}$")
 _PAYMENT_ID_PATTERN = re.compile(r"^PAY-[A-Za-z0-9-]{1,72}$")
 _DETECTION_ID_PATTERN = re.compile(r"^DET-[A-Za-z0-9-]{1,72}$")
+_REVIEWER_ID_PATTERN = re.compile(r"^USER-[A-Za-z0-9-]{1,68}$")
 
 
 class InvestigationAPIError(Exception):
@@ -133,6 +135,50 @@ class InvestigationAPIClient:
             DetectionResultInvestigationView,
         )
 
+    def list_payment_reviews(self, payment_id: str) -> list[HumanReview]:
+        payment_id = _validate_id(payment_id, _PAYMENT_ID_PATTERN, "payment")
+        payload = self._get_json(
+            f"/v1/investigation/payments/{payment_id}/reviews"
+        )
+        return self._validate_model_list(payload, HumanReview)
+
+    def create_payment_review(
+        self,
+        payment_id: str,
+        detection_result_id: str,
+        reviewer_id: str,
+        decision: HumanReviewDecision,
+        note: str | None,
+    ) -> HumanReview:
+        payment_id = _validate_id(payment_id, _PAYMENT_ID_PATTERN, "payment")
+        detection_result_id = _validate_id(
+            detection_result_id,
+            _DETECTION_ID_PATTERN,
+            "detection result",
+        )
+        if (
+            not isinstance(reviewer_id, str)
+            or not _REVIEWER_ID_PATTERN.fullmatch(reviewer_id)
+        ):
+            raise ValueError("Enter a valid reviewer ID (USER-...).")
+        if note is not None and len(note) > 4000:
+            raise ValueError("Review notes must be 4000 characters or fewer.")
+        try:
+            payload = self._post_json(
+                f"/v1/investigation/payments/{payment_id}/reviews",
+                json={
+                    "detection_result_id": detection_result_id,
+                    "reviewer_id": reviewer_id,
+                    "decision": decision.value,
+                    "note": note or None,
+                },
+            )
+            return HumanReview.model_validate(payload)
+        except ValidationError as error:
+            raise InvestigationAPIError(
+                "The investigation API returned malformed review data."
+            ) from error
+
     def _get_model(self, path, model_type):
         payload = self._get_json(path)
         try:
@@ -146,6 +192,13 @@ class InvestigationAPIClient:
 
     def _get_model_list(self, path, model_type, params=None):
         payload = self._get_json(path, params=params)
+        models = self._validate_model_list(payload, model_type)
+        for model in models:
+            if hasattr(model, "data_source"):
+                _require_streaming_source(model)
+        return models
+
+    def _validate_model_list(self, payload, model_type):
         if not isinstance(payload, list):
             raise InvestigationAPIError(
                 "The investigation API returned malformed data."
@@ -156,26 +209,28 @@ class InvestigationAPIClient:
             raise InvestigationAPIError(
                 "The investigation API returned malformed data."
             ) from error
-        for model in models:
-            _require_streaming_source(model)
         return models
 
     def _get_json(self, path, params=None):
         try:
             response = self._client.get(path, params=params)
-        except httpx.ConnectError as error:
-            raise InvestigationAPIError(
-                "Could not connect to the local investigation API."
-            ) from error
-        except httpx.TimeoutException as error:
-            raise InvestigationAPIError(
-                "The local investigation API request timed out."
-            ) from error
         except httpx.RequestError as error:
-            raise InvestigationAPIError(
-                "The local investigation API request failed."
-            ) from error
+            raise _request_error(error) from error
 
+        return self._parse_response(response)
+
+    def _post_json(self, path, json):
+        try:
+            response = self._client.post(path, json=json)
+        except httpx.ConnectError as error:
+            raise _request_error(error) from error
+        except httpx.RequestError as error:
+            raise _request_error(error) from error
+
+        return self._parse_response(response)
+
+    @staticmethod
+    def _parse_response(response):
         if response.status_code == 404:
             raise InvestigationAPIError(
                 "The requested payment or detection result was not found."
@@ -190,6 +245,20 @@ class InvestigationAPIClient:
             raise InvestigationAPIError(
                 "The investigation API returned malformed data."
             ) from error
+
+
+def _request_error(error):
+    if isinstance(error, httpx.ConnectError):
+        return InvestigationAPIError(
+            "Could not connect to the local investigation API."
+        )
+    if isinstance(error, httpx.TimeoutException):
+        return InvestigationAPIError(
+            "The local investigation API request timed out."
+        )
+    return InvestigationAPIError(
+        "The local investigation API request failed."
+    )
 
 
 def _validate_id(value, pattern, name):

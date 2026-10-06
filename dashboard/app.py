@@ -24,6 +24,7 @@ from investigation_client import (
     InvestigationAPIClient,
     InvestigationAPIError,
 )
+from payment_service.schemas import HumanReviewDecision
 
 
 OFFLINE_DATASET_MODE = "Offline Dataset"
@@ -229,6 +230,89 @@ def render_detection_result(ui, result):
     ui.json(result.model_dump(mode="json"))
 
 
+def render_investigation_reviews(ui, client, payment_id, detection_results):
+    ui.subheader("Investigator reviews")
+    ui.info(
+        "Reviews are simulated/investigative records only. They do not change "
+        "payment status or risk status and do not trigger financial actions."
+    )
+    reviews = client.list_payment_reviews(payment_id)
+    if reviews:
+        ui.dataframe(
+            [
+                {
+                    "Reviewer": review.reviewer_id,
+                    "Decision": review.decision.value,
+                    "Notes": review.note or "",
+                    "Timestamp": review.created_at,
+                }
+                for review in reviews
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        ui.info("No investigator reviews have been recorded for this payment.")
+
+    if not detection_results:
+        ui.caption("A detection result is required to associate a review.")
+        return
+
+    ui.markdown("**Add an investigative review**")
+    detection_ids = [item.detection_result_id for item in detection_results]
+    detection_result_id = ui.selectbox(
+        "Review evidence",
+        detection_ids,
+        key="investigation_review_detection_id",
+    )
+    reviewer_id = ui.text_input(
+        "Reviewer ID",
+        placeholder="USER-...",
+        key="investigation_reviewer_id",
+    ).strip()
+    decision = ui.selectbox(
+        "Review decision",
+        list(HumanReviewDecision),
+        format_func=lambda item: item.value.replace("_", " ").title(),
+        key="investigation_review_decision",
+    )
+    note = ui.text_area(
+        "Investigation notes (optional)",
+        max_chars=4000,
+        key="investigation_review_note",
+    )
+    if ui.button("Submit investigative review", key="submit_investigation_review"):
+        try:
+            if not reviewer_id:
+                raise ValueError("Enter a valid reviewer ID (USER-...).")
+            with ui.spinner("Saving append-only investigative review..."):
+                client.create_payment_review(
+                    payment_id,
+                    detection_result_id,
+                    reviewer_id,
+                    decision,
+                    note,
+                )
+                reviews = client.list_payment_reviews(payment_id)
+            ui.success("Investigative review recorded.")
+            if reviews:
+                ui.dataframe(
+                    [
+                        {
+                            "Reviewer": review.reviewer_id,
+                            "Decision": review.decision.value,
+                            "Notes": review.note or "",
+                            "Timestamp": review.created_at,
+                        }
+                        for review in reviews
+                    ],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+        except (ValueError, InvestigationAPIError) as error:
+            ui.error(str(error))
+
+
 def render_investigation_mode(ui=st, client=None):
     """Render the explicitly selected, read-only payment investigation view."""
     ui.header("Payment Service / Investigation")
@@ -312,6 +396,12 @@ def render_investigation_mode(ui=st, client=None):
                 render_detection_result(ui, result)
             else:
                 ui.info("No detection results are associated with this payment.")
+            render_investigation_reviews(
+                ui,
+                client,
+                payment_id,
+                detection_results,
+            )
         else:
             ui.info("No payments were found for this account.")
         render_account_activity(ui, activity)

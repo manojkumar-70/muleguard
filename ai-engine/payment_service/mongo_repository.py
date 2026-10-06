@@ -414,6 +414,36 @@ class MongoPaymentRepository(PaymentRepository):
         except PyMongoError as error:
             raise _database_error(error, "save human review") from error
 
+    def list_human_reviews_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[HumanReview]:
+        try:
+            detection_cursor = self._database["detection_results"].find(
+                {"payment_id": payment_id}
+            )
+            detection_ids = [
+                document["detection_result_id"]
+                for document in detection_cursor
+            ]
+            if not detection_ids:
+                return []
+            review_cursor = self._database["human_reviews"].find(
+                {"detection_result_id": {"$in": detection_ids}}
+            )
+            documents = review_cursor.sort(
+                [("created_at", DESCENDING), ("review_id", ASCENDING)]
+            )
+            return [
+                _model_from_document(HumanReview, document)
+                for document in documents
+            ]
+        except PyMongoError as error:
+            raise _database_error(
+                error,
+                f"list reviews for payment {payment_id}",
+            ) from error
+
     def save_simulated_intervention(
         self,
         intervention: SimulatedIntervention,

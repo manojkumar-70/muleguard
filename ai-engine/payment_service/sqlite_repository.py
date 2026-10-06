@@ -457,6 +457,36 @@ class SQLitePaymentRepository(PaymentRepository):
             ),
         )
 
+    def list_human_reviews_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[HumanReview]:
+        try:
+            with self._database.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT review.review_id, review.detection_result_id,
+                           review.reviewer_id, review.decision, review.note,
+                           review.created_at
+                    FROM human_reviews AS review
+                    JOIN detection_results AS detection
+                      ON detection.detection_result_id =
+                         review.detection_result_id
+                    WHERE detection.payment_id = ?
+                    ORDER BY julianday(review.created_at) DESC,
+                             review.review_id ASC
+                    """,
+                    (payment_id,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise RepositoryDatabaseError(
+                f"Could not list reviews for payment {payment_id}: {error}"
+            ) from error
+        return [
+            HumanReview.model_validate(dict(row))
+            for row in rows
+        ]
+
     def save_simulated_intervention(
         self,
         intervention: SimulatedIntervention,

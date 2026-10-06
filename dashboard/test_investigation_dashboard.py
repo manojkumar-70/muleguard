@@ -16,6 +16,7 @@ from app import (
     OFFLINE_DATASET_MODE,
     render_investigation_mode,
 )
+from payment_service.schemas import HumanReviewDecision
 from investigation_client import (
     API_BASE_URL_ENV,
     DEFAULT_API_BASE_URL,
@@ -101,6 +102,41 @@ class InvestigationClientTests(unittest.TestCase):
         finally:
             client.close()
 
+    def test_review_api_client_lists_and_posts_existing_contract(self):
+        requests = []
+
+        def handle(request):
+            requests.append(request)
+            if request.method == "GET":
+                return _json_response([_review_json()])
+            return _json_response(_review_json())
+
+        client = _client(handle)
+        try:
+            reviews = client.list_payment_reviews("PAY-0001")
+            created = client.create_payment_review(
+                "PAY-0001",
+                "DET-0001",
+                "USER-0001",
+                HumanReviewDecision.UNRESOLVED,
+                "Synthetic note.",
+            )
+        finally:
+            client.close()
+
+        self.assertEqual(len(reviews), 1)
+        self.assertEqual(created.reviewer_id, "USER-0001")
+        self.assertEqual(
+            requests[0].url.path,
+            "/v1/investigation/payments/PAY-0001/reviews",
+        )
+        self.assertEqual(requests[1].method, "POST")
+        self.assertEqual(
+            requests[1].url.path,
+            "/v1/investigation/payments/PAY-0001/reviews",
+        )
+        self.assertIn(b'"decision":"UNRESOLVED"', requests[1].content)
+
 
 class InvestigationRenderingTests(unittest.TestCase):
     def test_account_activity_payment_details_and_detection_rendering(self):
@@ -166,12 +202,41 @@ class InvestigationRenderingTests(unittest.TestCase):
             )
         )
 
+    def test_dashboard_displays_existing_reviews(self):
+        ui = _RecordingUI()
+        client = _SampleClient()
+        render_investigation_mode(ui=ui, client=client)
+
+        self.assertTrue(any("Investigator reviews" in message for message in ui.messages))
+        review_rows = [
+            row
+            for table in ui.tables
+            for row in table
+            if "Reviewer" in row
+        ]
+        self.assertTrue(review_rows)
+        self.assertEqual(review_rows[0]["Reviewer"], "USER-0001")
+        self.assertEqual(review_rows[0]["Decision"], "NEEDS_MORE_INFORMATION")
+        self.assertIn("investigative records only", " ".join(ui.messages))
+
+    def test_dashboard_can_submit_an_append_only_review(self):
+        ui = _RecordingUI(submit_review=True)
+        client = _SampleClient()
+        render_investigation_mode(ui=ui, client=client)
+
+        self.assertEqual(len(client.created_reviews), 1)
+        self.assertEqual(client.created_reviews[0][0], "PAY-0001")
+        self.assertEqual(client.created_reviews[0][1], "DET-0001")
+        self.assertEqual(client.created_reviews[0][2], "USER-0001")
+        self.assertTrue(any("Investigative review recorded" in message for message in ui.messages))
+
 
 class _RecordingUI:
-    def __init__(self):
+    def __init__(self, submit_review=False):
         self.messages = []
         self.errors = []
         self.tables = []
+        self.submit_review = submit_review
 
     def header(self, value):
         self.messages.append(value)
@@ -182,8 +247,8 @@ class _RecordingUI:
     def caption(self, value):
         self.messages.append(value)
 
-    def text_input(self, *args, **kwargs):
-        return "ACC-A"
+    def text_input(self, label, *args, **kwargs):
+        return "USER-0001" if label == "Reviewer ID" else "ACC-A"
 
     @contextmanager
     def spinner(self, message):
@@ -199,8 +264,20 @@ class _RecordingUI:
     def selectbox(self, _label, options, **kwargs):
         return options[0]
 
+    def text_area(self, *args, **kwargs):
+        return "Dashboard investigative note."
+
+    def button(self, label, **kwargs):
+        return self.submit_review and label == "Submit investigative review"
+
     def json(self, value):
         self.messages.append(json.dumps(value))
+
+    def markdown(self, value):
+        self.messages.append(value)
+
+    def success(self, value):
+        self.messages.append(value)
 
     def error(self, value):
         self.errors.append(value)
@@ -209,6 +286,7 @@ class _RecordingUI:
 class _SampleClient:
     def __init__(self, empty=False):
         self.empty = empty
+        self.created_reviews = []
 
     def list_account_payments(self, account_id):
         return [] if self.empty else [_payment_model()]
@@ -224,6 +302,28 @@ class _SampleClient:
 
     def get_detection_result(self, detection_result_id):
         return _detection_model()
+
+    def list_payment_reviews(self, payment_id):
+        return [_review_model()]
+
+    def create_payment_review(
+        self,
+        payment_id,
+        detection_result_id,
+        reviewer_id,
+        decision,
+        note,
+    ):
+        self.created_reviews.append(
+            (
+                payment_id,
+                detection_result_id,
+                reviewer_id,
+                decision,
+                note,
+            )
+        )
+        return _review_model()
 
 
 class _FailingClient:
@@ -322,6 +422,28 @@ def _detection_model():
         disclaimer="Synthetic test only.",
         data_source=InvestigationDataSource.STREAMING_PAYMENT_SERVICE,
     )
+
+
+def _review_model():
+    from datetime import datetime, timezone
+
+    from payment_service.schemas import (
+        HumanReview,
+        HumanReviewDecision,
+    )
+
+    return HumanReview(
+        review_id="REV-0001",
+        detection_result_id="DET-0001",
+        reviewer_id="USER-0001",
+        decision=HumanReviewDecision.NEEDS_MORE_INFORMATION,
+        note="Synthetic investigator note.",
+        created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+    )
+
+
+def _review_json():
+    return _review_model().model_dump(mode="json")
 
 
 if __name__ == "__main__":

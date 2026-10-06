@@ -356,6 +356,12 @@ def _register_payment_error_handlers(application: FastAPI) -> None:
     async def sanitize_payment_validation(
         request: Request, error: RequestValidationError
     ):
+        if request.url.path.startswith("/v1/investigation"):
+            return await payment_error_handler(
+                422,
+                "invalid_request",
+                "Investigation request validation failed.",
+            )(request, error)
         if request.url.path.startswith("/v1/payments"):
             return await payment_error_handler(
                 422, "invalid_request", "Payment request validation failed."

@@ -118,6 +118,13 @@ class PaymentRepository(Protocol):
         """Persist a human review as an append-only record."""
         ...
 
+    def list_human_reviews_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[HumanReview]:
+        """List append-only reviews linked to a payment, newest first."""
+        ...
+
     def save_simulated_intervention(
         self,
         intervention: SimulatedIntervention,
