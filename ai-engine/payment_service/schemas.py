@@ -167,7 +167,7 @@ class ProviderEvent(ContractModel):
 
 
 class NormalizedTransactionEvent(ContractModel):
-    transaction_id: str = Field(pattern=r"^TXN-[A-Za-z0-9-]{1,74}$")
+    transaction_id: str = Field(pattern=r"^(?:TXN|PAY)-[A-Za-z0-9-]{1,74}$")
     sender: str = Field(pattern=r"^ACC-[A-Za-z0-9-]{1,74}$")
     receiver: str = Field(pattern=r"^ACC-[A-Za-z0-9-]{1,74}$")
     amount_paise: StrictInt = Field(gt=0)
@@ -179,7 +179,9 @@ class NormalizedTransactionEvent(ContractModel):
     )
     ip_address: str | None = None
     payment_id: str = Field(pattern=r"^PAY-[A-Za-z0-9-]{1,72}$")
-    source: str = Field(pattern=r"^[A-Z][A-Z0-9_-]{0,39}$")
+    source: str = Field(
+        pattern=r"^(?:[A-Z][A-Z0-9_-]{0,39}|synthetic_payment_service)$"
+    )
 
     @field_validator("timestamp")
     @classmethod
