@@ -14,6 +14,18 @@ from payment_service.errors import (
     RepositoryConstraintError,
     RepositoryDatabaseError,
 )
+from payment_service.investigation_schemas import (
+    AccountActivityItem,
+    DetectionResultInvestigationView,
+    PaymentInvestigationSummary,
+)
+from payment_service.investigation_repository import (
+    account_activity,
+    detection_investigation,
+    payment_investigation,
+    sort_newest_first,
+    validate_investigation_limit,
+)
 from payment_service.repository import PaymentRepository
 from payment_service.schemas import (
     DetectionResult,
@@ -200,6 +212,125 @@ class SQLitePaymentRepository(PaymentRepository):
         if row is None:
             return None
         return _payment_from_row(row)
+
+    def get_payment_investigation(
+        self,
+        payment_id: str,
+    ) -> PaymentInvestigationSummary:
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            raise PaymentNotFoundError(f"Payment not found: {payment_id}")
+        return payment_investigation(payment)
+
+    def list_account_payments(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[PaymentInvestigationSummary]:
+        limit = validate_investigation_limit(limit)
+        try:
+            with self._database.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM payments
+                    WHERE sender_account_id = ? OR receiver_account_id = ?
+                    """,
+                    (account_id, account_id),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise RepositoryDatabaseError(
+                f"Could not list payments for account {account_id}: {error}"
+            ) from error
+        payments = [_payment_from_row(row) for row in rows]
+        payments = sort_newest_first(payments, lambda payment: payment.payment_id)
+        return [
+            payment_investigation(payment)
+            for payment in payments[:limit]
+        ]
+
+    def get_detection_result(
+        self,
+        detection_result_id: str,
+    ) -> DetectionResultInvestigationView:
+        try:
+            with self._database.connection() as connection:
+                row = connection.execute(
+                    """
+                    SELECT detection_result_id, payment_id, transaction_id,
+                           protocol, risk_score, risk_status, signals_json,
+                           created_at, disclaimer
+                    FROM detection_results WHERE detection_result_id = ?
+                    """,
+                    (detection_result_id,),
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise RepositoryDatabaseError(
+                "Could not retrieve detection result "
+                f"{detection_result_id}: {error}"
+            ) from error
+        if row is None:
+            raise DetectionResultNotFoundError(
+                f"Detection result not found: {detection_result_id}"
+            )
+        result = _detection_result_from_row(row)
+        return detection_investigation(result)
+
+    def list_detection_results_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[DetectionResultInvestigationView]:
+        try:
+            with self._database.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT detection_result_id, payment_id, transaction_id,
+                           protocol, risk_score, risk_status, signals_json,
+                           created_at, disclaimer
+                    FROM detection_results
+                    WHERE payment_id = ?
+                    """,
+                    (payment_id,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise RepositoryDatabaseError(
+                f"Could not list detection results for payment {payment_id}: {error}"
+            ) from error
+        results = [_detection_result_from_row(row) for row in rows]
+        results = sort_newest_first(
+            results,
+            lambda result: result.detection_result_id,
+        )
+        return [detection_investigation(result) for result in results]
+
+    def list_account_activity(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[AccountActivityItem]:
+        limit = validate_investigation_limit(limit)
+        try:
+            with self._database.connection() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM payments
+                    WHERE sender_account_id = ? OR receiver_account_id = ?
+                    """,
+                    (account_id, account_id),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise RepositoryDatabaseError(
+                f"Could not list activity for account {account_id}: {error}"
+            ) from error
+        activity = [
+            item
+            for row in rows
+            for item in account_activity(_payment_from_row(row), account_id)
+        ]
+        activity = sort_newest_first(
+            activity,
+            lambda item: (item.payment_id, item.direction.value),
+        )
+        return activity[:limit]
 
     def update_payment(self, payment: Payment) -> None:
         payment = Payment.model_validate(payment)
@@ -571,6 +702,22 @@ def _payment_from_row(row):
             "failure_code": row["failure_code"],
             "detection_protocol": row["detection_protocol"],
             "detection_result_id": row["detection_result_id"],
+        }
+    )
+
+
+def _detection_result_from_row(row):
+    return DetectionResult.model_validate(
+        {
+            "detection_result_id": row["detection_result_id"],
+            "payment_id": row["payment_id"],
+            "transaction_id": row["transaction_id"],
+            "protocol": row["protocol"],
+            "risk_score": row["risk_score"],
+            "risk_status": row["risk_status"],
+            "signals": json.loads(row["signals_json"]),
+            "created_at": row["created_at"],
+            "disclaimer": row["disclaimer"],
         }
     )
 

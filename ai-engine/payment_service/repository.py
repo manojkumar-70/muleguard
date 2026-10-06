@@ -2,6 +2,11 @@
 
 from typing import Protocol
 
+from payment_service.investigation_schemas import (
+    AccountActivityItem,
+    DetectionResultInvestigationView,
+    PaymentInvestigationSummary,
+)
 from payment_service.schemas import (
     DetectionResult,
     HumanReview,
@@ -50,6 +55,43 @@ class PaymentRepository(Protocol):
 
     def get_payment(self, payment_id: str) -> Payment | None:
         """Fetch a payment by internal ID."""
+        ...
+
+    def get_payment_investigation(
+        self,
+        payment_id: str,
+    ) -> PaymentInvestigationSummary:
+        """Return a safe read-only investigation projection of a payment."""
+        ...
+
+    def list_account_payments(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[PaymentInvestigationSummary]:
+        """List payments linked to an account, newest first."""
+        ...
+
+    def get_detection_result(
+        self,
+        detection_result_id: str,
+    ) -> DetectionResultInvestigationView:
+        """Fetch a persisted detection result by ID."""
+        ...
+
+    def list_detection_results_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[DetectionResultInvestigationView]:
+        """List persisted detection results associated with a payment."""
+        ...
+
+    def list_account_activity(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[AccountActivityItem]:
+        """List account-relative payment activity, newest first."""
         ...
 
     def update_payment(self, payment: Payment) -> None:

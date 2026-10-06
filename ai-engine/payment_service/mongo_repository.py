@@ -5,7 +5,7 @@ import os
 import re
 from datetime import timezone
 
-from pymongo import ASCENDING, MongoClient
+from pymongo import ASCENDING, DESCENDING, MongoClient
 from pymongo.errors import (
     CollectionInvalid,
     DuplicateKeyError,
@@ -13,12 +13,24 @@ from pymongo.errors import (
 )
 
 from payment_service.errors import (
+    DetectionResultNotFoundError,
     IdempotencyConflictError,
     InvalidPaymentTransitionError,
     PaymentNotFoundError,
     ProviderEventConflictError,
     RepositoryConstraintError,
     RepositoryDatabaseError,
+)
+from payment_service.investigation_schemas import (
+    AccountActivityItem,
+    DetectionResultInvestigationView,
+    PaymentInvestigationSummary,
+)
+from payment_service.investigation_repository import (
+    account_activity,
+    detection_investigation,
+    payment_investigation,
+    validate_investigation_limit,
 )
 from payment_service.repository import PaymentRepository
 from payment_service.schemas import (
@@ -176,6 +188,116 @@ class MongoPaymentRepository(PaymentRepository):
         except PyMongoError as error:
             raise _database_error(error, f"retrieve payment {payment_id}") from error
         return _model_from_document(Payment, document)
+
+    def get_payment_investigation(
+        self,
+        payment_id: str,
+    ) -> PaymentInvestigationSummary:
+        payment = self.get_payment(payment_id)
+        if payment is None:
+            raise PaymentNotFoundError(f"Payment not found: {payment_id}")
+        return payment_investigation(payment)
+
+    def list_account_payments(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[PaymentInvestigationSummary]:
+        limit = validate_investigation_limit(limit)
+        try:
+            cursor = self._database["payments"].find(
+                {
+                    "$or": [
+                        {"sender_account_id": account_id},
+                        {"receiver_account_id": account_id},
+                    ]
+                }
+            )
+            documents = cursor.sort(
+                [("created_at", DESCENDING), ("payment_id", ASCENDING)]
+            ).limit(limit)
+        except PyMongoError as error:
+            raise _database_error(error, f"list payments for account {account_id}") from error
+        return [
+            payment_investigation(_model_from_document(Payment, document))
+            for document in documents
+        ]
+
+    def get_detection_result(
+        self,
+        detection_result_id: str,
+    ) -> DetectionResultInvestigationView:
+        try:
+            document = self._database["detection_results"].find_one(
+                {"detection_result_id": detection_result_id}
+            )
+        except PyMongoError as error:
+            raise _database_error(
+                error,
+                f"retrieve detection result {detection_result_id}",
+            ) from error
+        result = _model_from_document(DetectionResult, document)
+        if result is None:
+            raise DetectionResultNotFoundError(
+                f"Detection result not found: {detection_result_id}"
+            )
+        return detection_investigation(result)
+
+    def list_detection_results_for_payment(
+        self,
+        payment_id: str,
+    ) -> list[DetectionResultInvestigationView]:
+        try:
+            cursor = self._database["detection_results"].find(
+                {"payment_id": payment_id}
+            )
+            documents = cursor.sort(
+                [
+                    ("created_at", DESCENDING),
+                    ("detection_result_id", ASCENDING),
+                ]
+            )
+        except PyMongoError as error:
+            raise _database_error(
+                error,
+                f"list detection results for payment {payment_id}",
+            ) from error
+        return [
+            detection_investigation(
+                _model_from_document(DetectionResult, document)
+            )
+            for document in documents
+        ]
+
+    def list_account_activity(
+        self,
+        account_id: str,
+        limit: int = 50,
+    ) -> list[AccountActivityItem]:
+        limit = validate_investigation_limit(limit)
+        try:
+            cursor = self._database["payments"].find(
+                {
+                    "$or": [
+                        {"sender_account_id": account_id},
+                        {"receiver_account_id": account_id},
+                    ]
+                }
+            )
+            documents = cursor.sort(
+                [("created_at", DESCENDING), ("payment_id", ASCENDING)]
+            ).limit(limit)
+        except PyMongoError as error:
+            raise _database_error(error, f"list activity for account {account_id}") from error
+        activity = [
+            item
+            for document in documents
+            for item in account_activity(
+                _model_from_document(Payment, document),
+                account_id,
+            )
+        ]
+        return activity[:limit]
 
     def update_payment(self, payment: Payment) -> None:
         payment = Payment.model_validate(payment)
