@@ -18,11 +18,15 @@ from rule_based_analysis import analyze_accounts
 from transaction_graph_analysis import analyze_transaction_graph
 from payment_service.config import PaymentAPISettings
 from payment_service.errors import (
+    DetectionResultNotFoundError,
     IdempotencyConflictError,
     InvalidPaymentTransitionError,
     PaymentNotFoundError,
     RepositoryConstraintError,
     RepositoryDatabaseError,
+)
+from payment_service.investigation_routes import (
+    investigation_router,
 )
 from payment_service.routes import (
     PaymentAPIError,
@@ -272,6 +276,7 @@ def create_app(settings: PaymentAPISettings | None = None) -> FastAPI:
 
     if settings.enabled:
         application.include_router(payment_router, prefix="/v1")
+        application.include_router(investigation_router, prefix="/v1")
         _register_payment_error_handlers(application)
     return application
 
@@ -302,6 +307,11 @@ def _register_payment_error_handlers(application: FastAPI) -> None:
             404,
             "payment_not_found",
             "Payment was not found.",
+        ),
+        DetectionResultNotFoundError: (
+            404,
+            "detection_result_not_found",
+            "Detection result was not found.",
         ),
         InactiveSyntheticEntityError: (
             409,
