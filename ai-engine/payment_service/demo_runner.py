@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 import tempfile
+
+AI_ENGINE_PATH = Path(__file__).resolve().parents[1]
+if str(AI_ENGINE_PATH) not in sys.path:
+    sys.path.insert(0, str(AI_ENGINE_PATH))
 
 from payment_service.detection_persistence_service import (
     DetectionPersistenceService,
