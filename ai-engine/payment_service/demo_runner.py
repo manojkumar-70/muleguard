@@ -139,8 +139,27 @@ def run_demo(database_path: str | Path | None = None) -> DemoRun:
     if account_state is None or not account_state["risk_score_progression"]:
         raise AssertionError("Focal account has no account-level streaming result.")
     latest_risk = account_state["risk_score_progression"][-1]
-    focal_explanation = account_state["first_alert_explanation"]
+    first_alert_explanation = account_state["first_alert_explanation"]
     alert_generated = account_state["first_alert_timestamp"] is not None
+
+    # Build a final-state explanation that matches the actual persisted score.
+    # first_alert_explanation is a frozen snapshot from when the account first
+    # crossed MEDIUM (e.g. 48.69/MEDIUM) and must NOT be used as the primary
+    # explanation for the final score (e.g. 98.33/HIGH).
+    final_explanation = {
+        "summary": (
+            f"Illustrative streaming risk reached {latest_risk['risk_level']} "
+            f"at {latest_risk['risk_score']}/100."
+        ),
+        "account_id": FOCAL_ACCOUNT_ID,
+        "protocol": latest_risk["protocol"],
+        "account_risk_score": float(latest_risk["risk_score"]),
+        "account_risk_level": latest_risk["risk_level"],
+        "transaction_count": latest_risk["transaction_count"],
+        "timestamp": latest_risk["timestamp"],
+        "disclaimer": DISCLAIMER,
+        "first_alert_snapshot": first_alert_explanation,
+    }
 
     detection_result = project_account_result_for_demo(
         payment=focal_payment,
@@ -148,7 +167,7 @@ def run_demo(database_path: str | Path | None = None) -> DemoRun:
         account_id=FOCAL_ACCOUNT_ID,
         account_risk_score=latest_risk["risk_score"],
         account_risk_level=latest_risk["risk_level"],
-        streaming_explanation=focal_explanation,
+        streaming_explanation=final_explanation,
         created_at=focal_payment.created_at,
     )
     DetectionPersistenceService().persist(detection_result, repository)

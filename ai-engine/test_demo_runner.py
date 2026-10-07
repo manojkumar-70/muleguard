@@ -177,9 +177,65 @@ class DemoRunnerGoldenTests(unittest.TestCase):
             "demo_account_level_projection"
         ]
         self.assertIn(FOCAL_ACCOUNT_ID, projection_evidence.explanation)
+        # First-alert detector signals are nested under first_alert_snapshot.
+        self.assertIn('"first_alert_snapshot"', projection_evidence.explanation)
         self.assertIn('"rule_based"', projection_evidence.explanation)
         self.assertIn('"graph_based"', projection_evidence.explanation)
         self.assertIn('"ml_anomaly"', projection_evidence.explanation)
+
+        # --- Explanation/score consistency regression (Phase 7.2 fix) ---
+        import json
+        evidence = json.loads(projection_evidence.explanation)
+
+        # Persisted scalar matches the focal account final streaming score.
+        self.assertEqual(
+            first_run.focal_account_risk_score,
+            persisted_detection.risk_score,
+        )
+        self.assertEqual(
+            first_run.focal_account_risk_level,
+            persisted_detection.risk_level,
+        )
+
+        # Nested streaming_explanation scores match the persisted scalar.
+        nested = evidence["streaming_explanation"]
+        self.assertEqual(
+            nested["account_risk_score"],
+            evidence["account_risk_score"],
+        )
+        self.assertEqual(
+            nested["account_risk_level"],
+            evidence["account_risk_level"],
+        )
+        self.assertEqual(
+            nested["account_risk_score"],
+            persisted_detection.risk_score,
+        )
+        self.assertEqual(
+            nested["account_risk_level"],
+            persisted_detection.risk_level,
+        )
+
+        # No stale 48.69/MEDIUM first-alert data at the top-level explanation.
+        self.assertNotIn("48.69", nested["summary"])
+        self.assertNotIn("MEDIUM", nested["summary"])
+        self.assertIn(str(first_run.focal_account_risk_score), nested["summary"])
+        self.assertIn(first_run.focal_account_risk_level, nested["summary"])
+
+        # First-alert snapshot is preserved as historical context only.
+        first_alert = nested["first_alert_snapshot"]
+        self.assertIsNotNone(first_alert)
+        self.assertIn("signals", first_alert)
+
+        # Payment state is unchanged.
+        self.assertEqual(
+            persisted_payment.payment_status,
+            PaymentStatus.CAPTURED,
+        )
+        self.assertEqual(
+            persisted_payment.risk_status,
+            RiskStatus.NOT_EVALUATED,
+        )
 
         self.assertEqual(
             _deterministic_summary(first_run),
