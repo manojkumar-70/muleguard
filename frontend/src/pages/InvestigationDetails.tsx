@@ -175,7 +175,7 @@ function DetectionSection({ detections }: { detections: DetectionResult[] }) {
             </div>
 
             {demo.accountRiskScore !== null && (
-              <div className="final-risk-callout">
+              <div className={`final-risk-callout ${(demo.accountRiskLevel ?? result.risk_level) === 'HIGH' ? 'final-risk-callout-high' : ''}`}>
                 <span>Final account risk state</span>
                 <strong>{demo.accountRiskLevel ?? result.risk_level} · {demo.accountRiskScore.toFixed(2)} / 100</strong>
                 <small>Current/final score from the serialized streaming explanation.</small>

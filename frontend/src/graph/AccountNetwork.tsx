@@ -88,7 +88,7 @@ function buildGraph(accountId: string, activity: AccountActivity[], profile: Off
   const edges: Edge[] = activity.map((item, index) => {
     const source = item.direction === 'INCOMING' ? item.counterparty_account_id : accountId;
     const target = item.direction === 'INCOMING' ? accountId : item.counterparty_account_id;
-    const suspiciousStatus = item.risk_status === 'HIGH' || item.risk_status === 'MEDIUM';
+    const suspiciousStatus = item.risk_status === 'HIGH';
     const color = suspiciousStatus ? '#ff2a3d' : '#6366f1';
     return {
       id: `${item.payment_id}-${index}`,

@@ -51,7 +51,7 @@ export function LiveDetection() {
       <div className="phase-legend" aria-label="Detection event categories">
         <div><Badge tone="neutral">Warm-up</Badge><span>Per-payment warm-up labels are not returned by the current API.</span></div>
         <div><Badge tone="intel">Scored</Badge><span>Payment has a linked detection result.</span></div>
-        <div><Badge tone="critical">Alert</Badge><span>Linked result is MEDIUM or HIGH.</span></div>
+        <div><Badge tone="critical">High Risk</Badge><span>Linked result is HIGH risk.</span></div>
       </div>
 
       {!accountId && (
@@ -66,7 +66,7 @@ export function LiveDetection() {
           <div className="timeline-list">
             {events.map(({ payment, detections }, index) => {
               const primaryDetection = detections[0];
-              const isAlert = detections.some((result) => result.risk_level === 'HIGH' || result.risk_level === 'MEDIUM');
+              const isAlert = detections.some((result) => result.risk_level === 'HIGH');
               const phase = isAlert ? 'alert' : primaryDetection ? 'scored' : 'unscored';
               return (
                 <article className={`timeline-event timeline-event-${phase}`} key={payment.payment_id} style={{ animationDelay: `${Math.min(index, 8) * 45}ms` }}>
@@ -75,7 +75,7 @@ export function LiveDetection() {
                     <div className="timeline-topline">
                       <div className="timeline-labels">
                         <Badge tone={phase === 'alert' ? 'critical' : phase === 'scored' ? 'intel' : 'neutral'}>
-                          {phase === 'alert' ? 'Alert' : phase === 'scored' ? 'Scored' : 'No linked detection'}
+                          {phase === 'alert' ? 'High Risk' : phase === 'scored' ? 'Scored' : 'No linked detection'}
                         </Badge>
                         <Badge tone="neutral">{payment.status}</Badge>
                       </div>

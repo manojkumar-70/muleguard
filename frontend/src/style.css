@@ -488,7 +488,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 
 /* Tone classes */
 .badge-neutral  { background: rgba(255,255,255,0.06); color: #a0a0ac; }
-.badge-low      { background: rgba(99,102,241,0.1);   color: #6366F1; }
+.badge-low      { background: rgba(255,255,255,0.06); color: #8B8B96; }
 .badge-medium   { background: rgba(202,138,4,0.12);   color: #d4a017; }
 .badge-high     { background: rgba(255,42,61,0.12);   color: #FF2A3D; }
 .badge-intel    { background: rgba(99,102,241,0.1);   color: #6366F1; }
@@ -498,7 +498,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .badge-unknown  { background: rgba(255,255,255,0.06); color: #8B8B96; }
 
 .badge-dot .badge-neutral  > .badge-dot { background: #a0a0ac; }
-.badge-low      .badge-dot { background: #6366F1; }
+.badge-low      .badge-dot { background: #8B8B96; }
 .badge-medium   .badge-dot { background: #d4a017; }
 .badge-high     .badge-dot { background: #FF2A3D; }
 .badge-intel    .badge-dot { background: #6366F1; }
@@ -527,8 +527,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 }
 
 .state-neutral { }
-.state-error   { border-color: rgba(255,42,61,0.25); background: rgba(255,42,61,0.04); }
-.state-error strong { color: #FF2A3D; }
+.state-error   { border-color: #25252D; background: #141419; }
+.state-error strong { color: #F5F5F5; }
 .state-loading { border-color: rgba(99,102,241,0.2); }
 
 .state-action { margin-top: 10px; }
@@ -867,11 +867,11 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   cursor: pointer;
   transition: background 0.15s, opacity 0.15s;
   border: none;
-  background: #FF2A3D;
+  background: #6366F1;
   color: #fff;
 }
 
-.button-primary:hover { background: #e02035; }
+.button-primary:hover { background: #4f46e5; }
 .button-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .button-secondary {
@@ -1255,7 +1255,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   gap: 4px;
 }
 
-.detection-score-row > div:first-child strong { font-size: 34px; font-weight: 800; color: #FF2A3D; letter-spacing: -0.03em; }
+.detection-score-row > div:first-child strong { font-size: 34px; font-weight: 800; color: #F5F5F5; letter-spacing: -0.03em; }
 .detection-score-row > div:first-child span   { font-size: 14px; color: #8B8B96; }
 
 .detection-score-copy { flex: 1; display: flex; flex-direction: column; gap: 3px; }
@@ -1269,28 +1269,31 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   align-items: baseline;
   gap: 10px;
   padding: 12px 18px;
-  background: rgba(255,42,61,0.04);
-  border-bottom: 1px solid rgba(255,42,61,0.15);
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   font-size: 12px;
   color: #8B8B96;
 }
 
-.final-risk-callout strong { color: #FF2A3D; font-size: 14px; font-weight: 700; }
+.final-risk-callout strong { color: #F5F5F5; font-size: 14px; font-weight: 700; }
 .final-risk-callout small  { font-size: 10px; color: #55555e; margin-left: auto; }
+
+.final-risk-callout-high { background: rgba(255,42,61,0.04); border-color: rgba(255,42,61,0.15); }
+.final-risk-callout-high strong { color: #FF2A3D; }
 
 .historical-callout {
   display: flex;
   flex-direction: column;
   gap: 5px;
   padding: 12px 18px;
-  background: rgba(202,138,4,0.04);
-  border-bottom: 1px solid rgba(202,138,4,0.15);
+  background: rgba(255,255,255,0.02);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   font-size: 12px;
   color: #8B8B96;
 }
 
 .historical-callout > div { display: flex; align-items: center; gap: 8px; }
-.historical-callout strong { color: #d4a017; font-size: 14px; }
+.historical-callout strong { color: #a0a0ac; font-size: 14px; }
 .historical-callout small  { font-size: 10px; color: #55555e; }
 
 .detection-case .evidence-grid,
@@ -1420,7 +1423,7 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
   margin-top: 4px;
 }
 
-.form-success { font-size: 12px; color: #22c55e; padding: 8px 10px; background: rgba(34,197,94,0.08); border-radius: 5px; }
+.form-success { font-size: 12px; color: #6366F1; padding: 8px 10px; background: rgba(99,102,241,0.08); border-radius: 5px; }
 .form-error   { font-size: 12px; color: #FF2A3D; padding: 8px 10px; background: rgba(255,42,61,0.08); border-radius: 5px; }
 
 /* ── Status grid ──────────────────────────────────────────── */
@@ -1444,8 +1447,8 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 .service-route   { font-size: 10px; font-family: 'IBM Plex Mono', monospace; color: #8B8B96; margin: 0; }
 .service-description { font-size: 12px; color: #8B8B96; }
 
-.service-available   { border-left: 3px solid #22c55e; }
-.service-unavailable { border-left: 3px solid #FF2A3D; }
+.service-available   { border-left: 3px solid #6366F1; }
+.service-unavailable { border-left: 3px solid #25252D; }
 .service-checking    { border-left: 3px solid #6366F1; }
 .service-not-exposed { border-left: 3px solid #25252D; }
 

@@ -30,7 +30,7 @@ export function SystemStatus() {
       <Panel title="Data source status" subtitle="Source labels are taken from returned records where the API provides them.">
         <div className="source-status-list">
           <div><span className="source-symbol source-indigo"><Network size={17} /></span><div><strong>OFFLINE_DATASET</strong><p>Existing synthetic transaction dataset used by summary and alert endpoints.</p></div><StatusBadge state={offlineSummary.state.status === 'success' ? 'available' : offlineSummary.state.status === 'loading' ? 'checking' : 'unavailable'} /></div>
-          <div><span className="source-symbol source-red"><Activity size={17} /></span><div><strong>{investigationSource ?? 'STREAMING_PAYMENT_SERVICE'}</strong><p>Investigation responses identify this source when matching payment data is returned.</p></div><StatusBadge state={investigation.state.status === 'success' ? 'available' : investigation.state.status === 'loading' ? 'checking' : 'unavailable'} /></div>
+          <div><span className="source-symbol source-indigo"><Activity size={17} /></span><div><strong>{investigationSource ?? 'STREAMING_PAYMENT_SERVICE'}</strong><p>Investigation responses identify this source when matching payment data is returned.</p></div><StatusBadge state={investigation.state.status === 'success' ? 'available' : investigation.state.status === 'loading' ? 'checking' : 'unavailable'} /></div>
         </div>
         {investigation.state.status === 'success' && investigationData?.length === 0 && <p className="quiet-note">The investigation route responded successfully with no payment rows for the sample account. The source is reachable, but no STREAMING_PAYMENT_SERVICE record was returned.</p>}
       </Panel>
@@ -53,7 +53,7 @@ function StatusCard({ title, detail, icon: Icon, state, description }: { title: 
 
 function StatusBadge({ state }: { state: 'available' | 'unavailable' | 'checking' | 'not-exposed' }) {
   const config = {
-    available: { label: 'Available', tone: 'success' as const },
+    available: { label: 'Available', tone: 'intel' as const },
     unavailable: { label: 'Unavailable', tone: 'critical' as const },
     checking: { label: 'Checking', tone: 'intel' as const },
     'not-exposed': { label: 'Not exposed', tone: 'neutral' as const },

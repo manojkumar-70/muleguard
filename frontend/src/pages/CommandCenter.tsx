@@ -121,7 +121,7 @@ export function CommandCenter() {
                   <YAxis type="category" dataKey="account_id" width={128} tick={{ fill: '#a4a4ad', fontSize: 10, fontFamily: 'IBM Plex Mono' }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Number(value).toFixed(2)} / 100`, 'Account risk']} />
                   <Bar dataKey="risk_score" radius={[0, 3, 3, 0]} maxBarSize={15}>
-                    {topAccounts.map((account) => <Cell key={account.account_id} fill={account.risk_level === 'HIGH' ? '#ff2a3d' : account.risk_level === 'MEDIUM' ? '#a98a4a' : '#6366f1'} />)}
+                    {topAccounts.map((account) => <Cell key={account.account_id} fill={account.risk_level === 'HIGH' ? '#ff2a3d' : account.risk_level === 'MEDIUM' ? '#a98a4a' : '#748178'} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -136,7 +136,7 @@ export function CommandCenter() {
           </div>
           <div className="intelligence-meta">
             <span>Detection status</span>
-            <Badge tone={summary.state.status === 'success' ? 'success' : 'warning'} dot>{summary.state.status === 'success' ? 'Summary available' : 'Unavailable'}</Badge>
+            <Badge tone={summary.state.status === 'success' ? 'intel' : 'warning'} dot>{summary.state.status === 'success' ? 'Summary available' : 'Unavailable'}</Badge>
           </div>
           <p className="quiet-note">The offline summary does not expose a payment-level model score or per-event streaming phase.</p>
           <Link className="button-secondary" to="/investigate">Open investigation workspace <ArrowUpRight size={15} /></Link>

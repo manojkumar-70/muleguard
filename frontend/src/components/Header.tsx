@@ -26,7 +26,7 @@ export function Header({ onMenu }: { onMenu: () => void }) {
       : 'FastAPI unavailable';
 
   const dotClass = reachable
-    ? 'status-indicator-green'
+    ? 'status-indicator-indigo'
     : state.status === 'loading'
     ? 'status-indicator-indigo'
     : 'status-indicator-red';
