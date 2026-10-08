@@ -4,7 +4,7 @@ MuleGuard AI is a student cybersecurity project for detecting suspicious synthet
 
 The project is planned to use Java for payment simulation, Python for AI and data analysis (Pandas, NumPy, Scikit-learn, and NetworkX), FastAPI for the backend API, and Streamlit for the dashboard.
 
-## Synthetic analysis api
+## Synthetic analysis API
 
 The local FastAPI backend analyzes only synthetic transactions. It does not
 connect to payment services or perform account actions. From `ai-engine`, start
