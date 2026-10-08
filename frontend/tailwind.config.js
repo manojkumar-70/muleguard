@@ -22,9 +22,13 @@ export default {
         text: {
           primary: '#F5F5F5',
           muted: '#8B8B96',
-        }
+        },
+      },
+      fontFamily: {
+        mono: ['IBM Plex Mono', 'Consolas', 'ui-monospace', 'monospace'],
+        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
     },
   },
   plugins: [],
-}
+};

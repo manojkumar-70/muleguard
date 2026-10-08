@@ -1,62 +1,66 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { ShieldAlert, Activity, Search, Network, Bell, CheckSquare, Server } from 'lucide-react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-function cn(...inputs: (string | undefined | null | false)[]) {
-  return twMerge(clsx(inputs));
-}
+import {
+  Activity,
+  Bell,
+  Boxes,
+  CircleDot,
+  ClipboardCheck,
+  Command,
+  Network,
+  Search,
+  ShieldAlert,
+} from 'lucide-react';
 
 const navItems = [
-  { name: 'Command Center', path: '/', icon: ShieldAlert },
-  { name: 'Live Detection', path: '/live', icon: Activity },
-  { name: 'Investigations', path: '/investigate', icon: Search },
-  { name: 'Network Graph', path: '/network', icon: Network },
-  { name: 'Alerts', path: '/alerts', icon: Bell },
-  { name: 'Reviews', path: '/reviews', icon: CheckSquare },
-  { name: 'System Status', path: '/status', icon: Server },
+  { name: 'Command Center', path: '/', icon: Command, group: 'OPERATIONS' },
+  { name: 'Live Detection', path: '/live', icon: Activity, group: 'OPERATIONS' },
+  { name: 'Investigations', path: '/investigate', icon: Search, group: 'INTELLIGENCE' },
+  { name: 'Network Graph', path: '/network', icon: Network, group: 'INTELLIGENCE' },
+  { name: 'Alerts', path: '/alerts', icon: Bell, group: 'INTELLIGENCE' },
+  { name: 'Reviews', path: '/reviews', icon: ClipboardCheck, group: 'GOVERNANCE' },
+  { name: 'System / API Status', path: '/status', icon: Boxes, group: 'GOVERNANCE' },
 ];
 
-export function Sidebar() {
+export function Sidebar({ open, onNavigate }: { open: boolean; onNavigate: () => void }) {
+  let activeGroup = '';
+
   return (
-    <aside className="w-64 bg-surface border-r border-border h-full flex flex-col">
-      <div className="p-6">
-        <div className="flex items-center gap-3 text-text-primary">
-          <ShieldAlert className="w-8 h-8 text-threat" />
-          <div>
-            <h1 className="font-bold text-lg tracking-tight">MuleGuard AI</h1>
-            <p className="text-xs text-text-muted font-medium uppercase tracking-wider">Detect. Investigate. Explain.</p>
-          </div>
+    <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
+      <div className="brand-lockup">
+        <div className="brand-icon"><ShieldAlert size={20} aria-hidden="true" /></div>
+        <div>
+          <p className="brand-name">MuleGuard <span>AI</span></p>
+          <p className="brand-tagline">Detect. Investigate. Explain.</p>
         </div>
       </div>
-      
-      <nav className="flex-1 px-4 space-y-1 mt-4">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium transition-colors',
-                isActive 
-                  ? 'bg-elevated text-intel font-semibold' 
-                  : 'text-text-muted hover:text-text-primary hover:bg-elevated/50'
-              )
-            }
-          >
-            <item.icon className="w-5 h-5" />
-            {item.name}
-          </NavLink>
-        ))}
+
+      <nav className="side-navigation" aria-label="Main navigation">
+        {navItems.map((item) => {
+          const showGroup = activeGroup !== item.group;
+          activeGroup = item.group;
+          return (
+            <div key={item.path}>
+              {showGroup && <p className="nav-group-label">{item.group}</p>}
+              <NavLink
+                to={item.path}
+                end={item.path === '/'}
+                onClick={onNavigate}
+                className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+              >
+                <item.icon size={17} strokeWidth={1.8} aria-hidden="true" />
+                <span>{item.name}</span>
+                {item.path === '/alerts' && <CircleDot className="nav-alert-mark" size={10} aria-hidden="true" />}
+              </NavLink>
+            </div>
+          );
+        })}
       </nav>
-      
-      <div className="p-4 m-4 rounded border border-border bg-elevated/30">
-        <p className="text-xs text-text-muted text-center leading-relaxed">
-          <span className="text-threat font-semibold block mb-1">Synthetic Environment</span>
-          No Real Financial Actions
-        </p>
+
+      <div className="sidebar-bottom">
+        <div className="sidebar-status-line"><span className="status-indicator status-indicator-indigo" />Local synthetic workspace</div>
+        <div className="sidebar-version">RESEARCH CONSOLE <span>PHASE 7.2</span></div>
       </div>
     </aside>
   );
 }
+

@@ -1,95 +1,158 @@
-import React, { useEffect, useState } from 'react';
+import { Activity, ArrowUpRight, Database, ShieldAlert, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { api } from '../api/client';
-import { StatCard } from '../components/StatCard';
-import { Card, CardHeader, CardContent } from '../components/Card';
-import { Badge } from '../components/Badge';
-import { Shield, AlertTriangle, Activity, Users } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { Badge, Metric, PageHeading, Panel, RawResponse, SourceStamp, StatePanel } from '../components/Ui';
+import { useResource } from '../hooks/useResource';
 
 export function CommandCenter() {
-  const [summary, setSummary] = useState<any>(null);
-  const [alerts, setAlerts] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    Promise.all([api.getSummary(), api.getAlerts()])
-      .then(([summaryData, alertsData]) => {
-        setSummary(summaryData);
-        setAlerts(alertsData);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) {
-    return <div className="text-text-muted animate-pulse">Initializing Command Center...</div>;
-  }
-
-  const riskCounts = summary?.risk?.risk_level_counts || { LOW: 0, MEDIUM: 0, HIGH: 0 };
-  const chartData = [
-    { name: 'LOW', count: riskCounts.LOW, fill: '#2E8B72' },
-    { name: 'MEDIUM', count: riskCounts.MEDIUM, fill: '#E0A43A' },
-    { name: 'HIGH', count: riskCounts.HIGH, fill: '#FF2A3D' },
-  ];
+  const summary = useResource(api.getSummary);
+  const alerts = useResource(api.getAlerts);
+  const summaryData = summary.state.status === 'success' ? summary.state.data : null;
+  const alertData = alerts.state.status === 'success' ? alerts.state.data : null;
+  const riskCounts = summaryData?.risk.risk_level_counts;
+  const riskData = riskCounts
+    ? [
+        { name: 'LOW', count: riskCounts.LOW ?? 0, color: '#748178' },
+        { name: 'MEDIUM', count: riskCounts.MEDIUM ?? 0, color: '#a98a4a' },
+        { name: 'HIGH', count: riskCounts.HIGH ?? 0, color: '#ff2a3d' },
+      ]
+    : [];
+  const topAccounts = [...(alertData?.alerts ?? [])]
+    .sort((left, right) => right.risk_score - left.risk_score)
+    .slice(0, 7);
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">Command Center</h1>
-          <p className="text-text-muted mt-1">Detection and intelligence overview</p>
-        </div>
+    <div className="page-stack">
+      <PageHeading
+        eyebrow="OPERATIONS OVERVIEW / OFFLINE DATASET"
+        title="Command Center"
+        description="Account-level threat signals across the currently available synthetic dataset."
+        action={<SourceStamp source="OFFLINE_DATASET" />}
+      />
+
+      <div className="metric-grid">
+        <Metric label="Monitored accounts" value={summaryData?.risk.account_count ?? '—'} icon={Users} detail="Offline dataset" />
+        <Metric label="Active alerts" value={alertData?.count ?? '—'} icon={ShieldAlert} detail="MEDIUM + HIGH accounts" tone="threat" />
+        <Metric label="High-risk accounts" value={riskCounts?.HIGH ?? '—'} icon={Activity} detail="Account-level risk" tone="threat" />
+        <Metric label="Payments analyzed" value={summaryData?.transaction_count ?? '—'} icon={Database} detail="Synthetic transactions" tone="intel" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <StatCard title="Monitored Accounts" value={summary?.risk?.total_accounts || 0} icon={Users} />
-        <StatCard title="Active Alerts" value={alerts?.count || 0} icon={AlertTriangle} trendUp={true} />
-        <StatCard title="High Risk Entities" value={riskCounts.HIGH || 0} icon={Shield} />
-        <StatCard title="Payments Analyzed" value={summary?.transaction_count || 0} icon={Activity} />
-      </div>
+      {(summary.state.status === 'error' || alerts.state.status === 'error') && (
+        <StatePanel
+          title="Some command-center data is unavailable"
+          description={[summary.state.status === 'error' && `Summary: ${summary.state.error.message}`, alerts.state.status === 'error' && `Alerts: ${alerts.state.error.message}`].filter(Boolean).join(' · ')}
+          icon={Database}
+          tone="error"
+        />
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader title="Risk Distribution" subtitle="Account risk levels across the monitored environment" />
-          <CardContent className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#25252D" vertical={false} />
-                <XAxis dataKey="name" stroke="#8B8B96" tick={{fill: '#8B8B96'}} axisLine={false} tickLine={false} />
-                <YAxis stroke="#8B8B96" tick={{fill: '#8B8B96'}} axisLine={false} tickLine={false} />
-                <Tooltip 
-                  cursor={{fill: '#141419'}} 
-                  contentStyle={{backgroundColor: '#0D0D10', borderColor: '#25252D', color: '#F5F5F5'}}
-                  itemStyle={{color: '#F5F5F5'}}
-                />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={60} />
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader title="Recent Alerts" subtitle="Highest risk accounts requiring review" />
-          <CardContent className="p-0">
-            <div className="divide-y divide-border h-80 overflow-y-auto">
-              {alerts?.alerts?.slice(0, 5).map((alert: any) => (
-                <div key={alert.account_id} className="p-4 flex justify-between items-center hover:bg-elevated/50 transition-colors">
-                  <div>
-                    <p className="font-medium text-text-primary">{alert.account_id}</p>
-                    <p className="text-xs text-text-muted mt-1 font-mono">Score: {alert.risk_score.toFixed(2)}/100</p>
+      <div className="dashboard-grid dashboard-grid-main">
+        <Panel title="Risk distribution" subtitle="Account counts by final aggregate risk level" className="panel-chart">
+          {summary.state.status === 'loading' ? (
+            <StatePanel title="Loading risk distribution" description="Requesting the offline analysis summary." icon={Activity} tone="loading" />
+          ) : riskData.length ? (
+            <div className="chart-split">
+              <div className="donut-wrap">
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={riskData} dataKey="count" nameKey="name" innerRadius={67} outerRadius={91} paddingAngle={3} stroke="none">
+                      {riskData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: '#f5f5f5' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="donut-center"><strong>{summaryData?.risk.account_count ?? '—'}</strong><span>accounts</span></div>
+              </div>
+              <div className="chart-legend">
+                {riskData.map((item) => (
+                  <div className="legend-row" key={item.name}>
+                    <span className="legend-swatch" style={{ background: item.color }} />
+                    <span>{item.name}</span>
+                    <strong>{item.count.toLocaleString()}</strong>
                   </div>
-                  <Badge variant={alert.risk_level === 'HIGH' ? 'high' : 'medium'}>
-                    {alert.risk_level}
-                  </Badge>
-                </div>
-              ))}
-              {(!alerts?.alerts || alerts.alerts.length === 0) && (
-                <div className="p-8 text-center text-text-muted">No active alerts found.</div>
-              )}
+                ))}
+                <p className="chart-footnote">Scores are illustrative review indicators, not proof of activity.</p>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+          ) : <StatePanel title="Risk distribution unavailable" description="The API did not return a usable risk summary." icon={Database} tone="error" />}
+        </Panel>
+
+        <Panel title="Highest-risk accounts" subtitle="Ranked by current offline account score" action={<Link className="text-link" to="/alerts">All alerts <ArrowUpRight size={14} /></Link>}>
+          {alerts.state.status === 'loading' ? (
+            <StatePanel title="Loading alerts" description="Requesting current flagged accounts." icon={Activity} tone="loading" />
+          ) : topAccounts.length ? (
+            <div className="rank-list">
+              {topAccounts.slice(0, 5).map((account, index) => (
+                <Link to={`/investigate?account=${encodeURIComponent(account.account_id)}`} className="rank-row" key={account.account_id}>
+                  <span className="rank-index">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="rank-account"><strong>{account.account_id}</strong><small>{account.risk_score.toFixed(2)} / 100</small></span>
+                  <Badge tone={account.risk_level}>{account.risk_level}</Badge>
+                </Link>
+              ))}
+            </div>
+          ) : alerts.state.status === 'error' ? (
+            <StatePanel title="Alerts unavailable" description={alerts.state.error.message} icon={ShieldAlert} tone="error" />
+          ) : (
+            <StatePanel title="No active alerts" description="No accounts currently meet the MEDIUM or HIGH review thresholds." icon={ShieldAlert} />
+          )}
+        </Panel>
       </div>
+
+      <div className="dashboard-grid dashboard-grid-lower">
+        <Panel title="Risk activity" subtitle="Relative scores for the highest flagged accounts; not a time series">
+          {topAccounts.length ? (
+            <div className="bar-chart-wrap">
+              <ResponsiveContainer width="100%" height={230}>
+                <BarChart data={topAccounts} layout="vertical" margin={{ top: 4, right: 20, left: 8, bottom: 4 }}>
+                  <CartesianGrid stroke="#25252d" horizontal={false} />
+                  <XAxis type="number" domain={[0, 100]} tick={{ fill: '#8b8b96', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="account_id" width={128} tick={{ fill: '#a4a4ad', fontSize: 10, fontFamily: 'IBM Plex Mono' }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} formatter={(value) => [`${Number(value).toFixed(2)} / 100`, 'Account risk']} />
+                  <Bar dataKey="risk_score" radius={[0, 3, 3, 0]} maxBarSize={15}>
+                    {topAccounts.map((account) => <Cell key={account.account_id} fill={account.risk_level === 'HIGH' ? '#ff2a3d' : account.risk_level === 'MEDIUM' ? '#a98a4a' : '#6366f1'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : <StatePanel title="No score series available" description="Risk comparisons appear when the alerts endpoint returns accounts." icon={Activity} />}
+        </Panel>
+
+        <Panel title="Detection intelligence" subtitle="How the offline account score is assembled">
+          <div className="intelligence-summary">
+            <div className="intelligence-mark"><Activity size={18} aria-hidden="true" /></div>
+            <div><strong>Rule + graph + anomaly analysis</strong><p>Signals are combined into an account-level aggregate. Individual account evidence is available in Investigations.</p></div>
+          </div>
+          <div className="intelligence-meta">
+            <span>Detection status</span>
+            <Badge tone={summary.state.status === 'success' ? 'success' : 'warning'} dot>{summary.state.status === 'success' ? 'Summary available' : 'Unavailable'}</Badge>
+          </div>
+          <p className="quiet-note">The offline summary does not expose a payment-level model score or per-event streaming phase.</p>
+          <Link className="button-secondary" to="/investigate">Open investigation workspace <ArrowUpRight size={15} /></Link>
+        </Panel>
+      </div>
+
+      {summaryData && <RawResponse value={summaryData} />}
     </div>
   );
 }
+
+const tooltipStyle = {
+  backgroundColor: '#111115',
+  border: '1px solid #303039',
+  borderRadius: 4,
+  color: '#f5f5f5',
+  fontSize: 12,
+};
+
