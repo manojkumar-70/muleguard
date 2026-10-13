@@ -1,6 +1,6 @@
 # MuleGuard AI
 
-MuleGuard AI is a student cybersecurity project for detecting suspicious synthetic financial transaction networks. It will combine rule-based analysis, machine learning, graph analysis, and explainable risk scoring.
+MuleGuard AI is a student cybersecurity project for detecting suspicious synthetic financial transaction networks. It will combine rule-based analysis, machine learning, graph analysis, and explainable risk scorings.
 
 The project is planned to use Java for payment simulation, Python for AI and data analysis (Pandas, NumPy, Scikit-learn, and NetworkX), FastAPI for the backend API, and Streamlit for the dashboard.
 
