@@ -19,7 +19,7 @@ The API provides `GET /health`, `GET /summary`, `GET /alerts`,
 `GET /accounts/{account_id}`, and `POST /analyze`. Run its tests from
 `ai-engine` with `python -m unittest -v test_api`.
 
-## Payment integration foundation contracts
+## Payment integration foundation contract
 
 Phase 3.2 defines closed Pydantic schemas and payment status transitions in
 `ai-engine/payment_service/`. Payment contracts require synthetic identifiers
